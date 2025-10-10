@@ -64,19 +64,8 @@ const DEFAULT_DATASET: DatasetEntry[] = [
 ];
 
 // Default logo (always visible). For local/testing this path works in canvas. For GitHub Pages, put the PNG in /public and set URL accordingly.
+// Use BASE_URL so it works on GitHub Pages project sites (e.g. /per-diem/)
 const DEFAULT_LOGO_URL = import.meta.env.BASE_URL + "logo.png";
-
-React.useEffect(() => {
-  (async () => {
-    try {
-      const res = await fetch(import.meta.env.BASE_URL + "per_diem_2025.json", { cache: "no-store" });
-      if (res.ok) {
-        const j = await res.json();
-        // TODO: convert and call setDataset(...) like we already do
-      }
-    } catch {}
-  })();
-}, []);
 
 // ---------------- Utilities ----------------
 
@@ -218,7 +207,7 @@ export default function App() {
   React.useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/per_diem_2025.json", { cache: "no-store" });
+        const res = await fetch(import.meta.env.BASE_URL + "per_diem_2025.json", { cache: "no-store" });
         if (res.ok) {
           const j = await res.json();
           const flat: DatasetEntry[] = Array.isArray(j) ? j : (j?.countries ? j.countries.flatMap((c: any)=> c.entries.map((e: any)=>({ country:c.country, city:e.city??null, full_day_eur:+e.full_day_eur, eight_plus_eur:+e.eight_plus_eur }))) : []);
