@@ -3,4 +3,6 @@
 @tailwind utilities;
 
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+const DEFAULT_LOGO_URL = import.meta.env.BASE_URL + "logo.png";
+fetch(import.meta.env.BASE_URL + "per_diem_2025.json", { cache: "no-store" });
 
