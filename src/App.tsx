@@ -64,7 +64,19 @@ const DEFAULT_DATASET: DatasetEntry[] = [
 ];
 
 // Default logo (always visible). For local/testing this path works in canvas. For GitHub Pages, put the PNG in /public and set URL accordingly.
-const DEFAULT_LOGO_URL = "/mnt/data/WAJ Logo Horizontal Positive + Origin - white bg no border 15percent.png";
+const DEFAULT_LOGO_URL = import.meta.env.BASE_URL + "logo.png";
+
+React.useEffect(() => {
+  (async () => {
+    try {
+      const res = await fetch(import.meta.env.BASE_URL + "per_diem_2025.json", { cache: "no-store" });
+      if (res.ok) {
+        const j = await res.json();
+        // TODO: convert and call setDataset(...) like we already do
+      }
+    } catch {}
+  })();
+}, []);
 
 // ---------------- Utilities ----------------
 
