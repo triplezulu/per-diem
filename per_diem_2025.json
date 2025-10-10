@@ -1,0 +1,1992 @@
+{
+  "year": 2025,
+  "currency": "EUR",
+  "source": "BMF: Auslandsreisen ab 1 Jan 2025 (annex tables)",
+  "countries": [
+    {
+      "country": "Afghanistan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 30,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "Albania",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Algeria",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 47,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Andorra",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Angola",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        }
+      ]
+    },
+    {
+      "country": "Argentina",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 35,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Armenia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 29,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "Australia",
+      "entries": [
+        {
+          "city": "Canberra",
+          "full_day_eur": 74,
+          "eight_plus_eur": 49
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        },
+        {
+          "city": "Sydney",
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        }
+      ]
+    },
+    {
+      "country": "Austria",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 50,
+          "eight_plus_eur": 33
+        }
+      ]
+    },
+    {
+      "country": "Azerbaijan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Bahrain",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Bangladesh",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Barbados",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 54,
+          "eight_plus_eur": 36
+        }
+      ]
+    },
+    {
+      "country": "Belarus",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 20,
+          "eight_plus_eur": 13
+        }
+      ]
+    },
+    {
+      "country": "Belgium",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        }
+      ]
+    },
+    {
+      "country": "Benin",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        }
+      ]
+    },
+    {
+      "country": "Bhutan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Bolivia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Bosnia and Herzegovina",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 23,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Botswana",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Brazil",
+      "entries": [
+        {
+          "city": "Brasilia",
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        },
+        {
+          "city": "Rio de Janeiro",
+          "full_day_eur": 69,
+          "eight_plus_eur": 46
+        },
+        {
+          "city": "Sao Paulo",
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Brunei",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 45,
+          "eight_plus_eur": 30
+        }
+      ]
+    },
+    {
+      "country": "Bulgaria",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 22,
+          "eight_plus_eur": 15
+        }
+      ]
+    },
+    {
+      "country": "Burkina Faso",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "Burundi",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Cambodia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Cameroon",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        }
+      ]
+    },
+    {
+      "country": "Canada",
+      "entries": [
+        {
+          "city": "Other",
+          "full_day_eur": 54,
+          "eight_plus_eur": 36
+        },
+        {
+          "city": "Ottawa",
+          "full_day_eur": 62,
+          "eight_plus_eur": 41
+        },
+        {
+          "city": "Toronto",
+          "full_day_eur": 54,
+          "eight_plus_eur": 36
+        },
+        {
+          "city": "Vancouver",
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        }
+      ]
+    },
+    {
+      "country": "Cape Verde",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "Central African Republic",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 53,
+          "eight_plus_eur": 36
+        }
+      ]
+    },
+    {
+      "country": "Chad",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Chile",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "China",
+      "entries": [
+        {
+          "city": "Beijing",
+          "full_day_eur": 30,
+          "eight_plus_eur": 20
+        },
+        {
+          "city": "Chengdu",
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        },
+        {
+          "city": "Guangzhou",
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        },
+        {
+          "city": "Hong Kong",
+          "full_day_eur": 71,
+          "eight_plus_eur": 48
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        },
+        {
+          "city": "Shanghai",
+          "full_day_eur": 58,
+          "eight_plus_eur": 39
+        }
+      ]
+    },
+    {
+      "country": "Colombia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Congo, Democratic Republic of",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Congo, Republic of",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 62,
+          "eight_plus_eur": 41
+        }
+      ]
+    },
+    {
+      "country": "Costa Rica",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 60,
+          "eight_plus_eur": 40
+        }
+      ]
+    },
+    {
+      "country": "Croatia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Cuba",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Cyprus",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Czech Republic",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Côte d’Ivoire",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        }
+      ]
+    },
+    {
+      "country": "Denmark",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 75,
+          "eight_plus_eur": 50
+        }
+      ]
+    },
+    {
+      "country": "Djibouti",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 77,
+          "eight_plus_eur": 52
+        }
+      ]
+    },
+    {
+      "country": "Dominican Republic",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 50,
+          "eight_plus_eur": 33
+        }
+      ]
+    },
+    {
+      "country": "Ecuador",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Egypt",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 50,
+          "eight_plus_eur": 33
+        }
+      ]
+    },
+    {
+      "country": "El Salvador",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Equatorial Guinea",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Eritrea",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Estonia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 29,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "Ethiopia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Fiji",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Finland",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 54,
+          "eight_plus_eur": 36
+        }
+      ]
+    },
+    {
+      "country": "France",
+      "entries": [
+        {
+          "city": "Other",
+          "full_day_eur": 53,
+          "eight_plus_eur": 36
+        },
+        {
+          "city": "Paris (Depts 77–78, 91–95)",
+          "full_day_eur": 58,
+          "eight_plus_eur": 39
+        }
+      ]
+    },
+    {
+      "country": "Gabon",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 64,
+          "eight_plus_eur": 43
+        }
+      ]
+    },
+    {
+      "country": "Gambia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        }
+      ]
+    },
+    {
+      "country": "Georgia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 45,
+          "eight_plus_eur": 30
+        }
+      ]
+    },
+    {
+      "country": "Ghana",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Greece",
+      "entries": [
+        {
+          "city": "Athens",
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Guatemala",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Guinea",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        }
+      ]
+    },
+    {
+      "country": "Guinea-Bissau",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Haiti",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 58,
+          "eight_plus_eur": 39
+        }
+      ]
+    },
+    {
+      "country": "Honduras",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        }
+      ]
+    },
+    {
+      "country": "Hungary",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Iceland",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 62,
+          "eight_plus_eur": 41
+        }
+      ]
+    },
+    {
+      "country": "India",
+      "entries": [
+        {
+          "city": "Bangalore",
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        },
+        {
+          "city": "Chennai",
+          "full_day_eur": 22,
+          "eight_plus_eur": 15
+        },
+        {
+          "city": "Kolkata",
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        },
+        {
+          "city": "Mumbai",
+          "full_day_eur": 53,
+          "eight_plus_eur": 36
+        },
+        {
+          "city": "New Delhi",
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 22,
+          "eight_plus_eur": 15
+        }
+      ]
+    },
+    {
+      "country": "Indonesia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 45,
+          "eight_plus_eur": 30
+        }
+      ]
+    },
+    {
+      "country": "Iran",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        }
+      ]
+    },
+    {
+      "country": "Ireland",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 58,
+          "eight_plus_eur": 39
+        }
+      ]
+    },
+    {
+      "country": "Israel",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Italy",
+      "entries": [
+        {
+          "city": "Milan",
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        },
+        {
+          "city": "Rome",
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Jamaica",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 39,
+          "eight_plus_eur": 26
+        }
+      ]
+    },
+    {
+      "country": "Japan",
+      "entries": [
+        {
+          "city": "Osaka",
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        },
+        {
+          "city": "Tokyo",
+          "full_day_eur": 50,
+          "eight_plus_eur": 33
+        }
+      ]
+    },
+    {
+      "country": "Jordan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        }
+      ]
+    },
+    {
+      "country": "Kazakhstan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        }
+      ]
+    },
+    {
+      "country": "Kenya",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Korea, Democratic People's Republic",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 28,
+          "eight_plus_eur": 19
+        }
+      ]
+    },
+    {
+      "country": "Korea, Republic of",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Kosovo",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 24,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Kuwait",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        }
+      ]
+    },
+    {
+      "country": "Kyrgyzstan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Laos",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 35,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Latvia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 35,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Lebanon",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 69,
+          "eight_plus_eur": 46
+        }
+      ]
+    },
+    {
+      "country": "Lesotho",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 28,
+          "eight_plus_eur": 19
+        }
+      ]
+    },
+    {
+      "country": "Liberia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Libya",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        }
+      ]
+    },
+    {
+      "country": "Liechtenstein",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        }
+      ]
+    },
+    {
+      "country": "Lithuania",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 26,
+          "eight_plus_eur": 17
+        }
+      ]
+    },
+    {
+      "country": "Luxembourg",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        }
+      ]
+    },
+    {
+      "country": "Madagascar",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        }
+      ]
+    },
+    {
+      "country": "Malawi",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Malaysia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Maldives",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 70,
+          "eight_plus_eur": 47
+        }
+      ]
+    },
+    {
+      "country": "Mali",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "Malta",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Marshall Islands",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        }
+      ]
+    },
+    {
+      "country": "Mauritania",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 35,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Mauritius",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Mexico",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Moldova",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 26,
+          "eight_plus_eur": 17
+        }
+      ]
+    },
+    {
+      "country": "Monaco",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 52,
+          "eight_plus_eur": 35
+        }
+      ]
+    },
+    {
+      "country": "Mongolia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 23,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Montenegro",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Morocco",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Mozambique",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Myanmar",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 23,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Namibia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 30,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "Nepal",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Netherlands",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 47,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "New Zealand",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 58,
+          "eight_plus_eur": 39
+        }
+      ]
+    },
+    {
+      "country": "Nicaragua",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "Niger",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Nigeria",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 46,
+          "eight_plus_eur": 31
+        }
+      ]
+    },
+    {
+      "country": "North Macedonia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Norway",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 75,
+          "eight_plus_eur": 50
+        }
+      ]
+    },
+    {
+      "country": "Oman",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 64,
+          "eight_plus_eur": 43
+        }
+      ]
+    },
+    {
+      "country": "Pakistan",
+      "entries": [
+        {
+          "city": "Islamabad",
+          "full_day_eur": 23,
+          "eight_plus_eur": 16
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Palau",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Panama",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Papua New Guinea",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        }
+      ]
+    },
+    {
+      "country": "Paraguay",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 39,
+          "eight_plus_eur": 26
+        }
+      ]
+    },
+    {
+      "country": "Peru",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Philippines",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Poland",
+      "entries": [
+        {
+          "city": "Other",
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        },
+        {
+          "city": "Warsaw",
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        },
+        {
+          "city": "Wroclaw",
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Portugal",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        }
+      ]
+    },
+    {
+      "country": "Qatar",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        }
+      ]
+    },
+    {
+      "country": "Romania",
+      "entries": [
+        {
+          "city": "Bucharest",
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Russia",
+      "entries": [
+        {
+          "city": "Moscow",
+          "full_day_eur": 30,
+          "eight_plus_eur": 20
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 28,
+          "eight_plus_eur": 19
+        },
+        {
+          "city": "Saint Petersburg",
+          "full_day_eur": 28,
+          "eight_plus_eur": 19
+        }
+      ]
+    },
+    {
+      "country": "Rwanda",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Samoa",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 39,
+          "eight_plus_eur": 26
+        }
+      ]
+    },
+    {
+      "country": "San Marino",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Saudi Arabia",
+      "entries": [
+        {
+          "city": "Jeddah",
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        },
+        {
+          "city": "Riyadh",
+          "full_day_eur": 56,
+          "eight_plus_eur": 37
+        }
+      ]
+    },
+    {
+      "country": "Senegal",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Serbia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Sierra Leone",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 57,
+          "eight_plus_eur": 38
+        }
+      ]
+    },
+    {
+      "country": "Singapore",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 71,
+          "eight_plus_eur": 48
+        }
+      ]
+    },
+    {
+      "country": "Slovakia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        }
+      ]
+    },
+    {
+      "country": "Slovenia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "South Africa",
+      "entries": [
+        {
+          "city": "Cape Town",
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        },
+        {
+          "city": "Johannesburg",
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 29,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "South Sudan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Spain",
+      "entries": [
+        {
+          "city": "Barcelona",
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        },
+        {
+          "city": "Canary Islands",
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        },
+        {
+          "city": "Madrid",
+          "full_day_eur": 42,
+          "eight_plus_eur": 28
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        },
+        {
+          "city": "Palma de Mallorca",
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Sri Lanka",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Sudan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 33,
+          "eight_plus_eur": 22
+        }
+      ]
+    },
+    {
+      "country": "Sweden",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Switzerland",
+      "entries": [
+        {
+          "city": "Geneva",
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 64,
+          "eight_plus_eur": 43
+        }
+      ]
+    },
+    {
+      "country": "Syria",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "São Tomé and Príncipe",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Taiwan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 51,
+          "eight_plus_eur": 34
+        }
+      ]
+    },
+    {
+      "country": "Tajikistan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 27,
+          "eight_plus_eur": 18
+        }
+      ]
+    },
+    {
+      "country": "Tanzania",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        }
+      ]
+    },
+    {
+      "country": "Thailand",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Togo",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 39,
+          "eight_plus_eur": 26
+        }
+      ]
+    },
+    {
+      "country": "Tonga",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 29,
+          "eight_plus_eur": 20
+        }
+      ]
+    },
+    {
+      "country": "Trinidad and Tobago",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Tunisia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        }
+      ]
+    },
+    {
+      "country": "Turkey",
+      "entries": [
+        {
+          "city": "Ankara",
+          "full_day_eur": 32,
+          "eight_plus_eur": 21
+        },
+        {
+          "city": "Izmir",
+          "full_day_eur": 44,
+          "eight_plus_eur": 29
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 24,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Turkmenistan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 28,
+          "eight_plus_eur": 19
+        }
+      ]
+    },
+    {
+      "country": "Uganda",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 41,
+          "eight_plus_eur": 28
+        }
+      ]
+    },
+    {
+      "country": "Ukraine",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 26,
+          "eight_plus_eur": 17
+        }
+      ]
+    },
+    {
+      "country": "United Arab Emirates",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "United Kingdom",
+      "entries": [
+        {
+          "city": "London",
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 52,
+          "eight_plus_eur": 35
+        }
+      ]
+    },
+    {
+      "country": "United States",
+      "entries": [
+        {
+          "city": "Atlanta",
+          "full_day_eur": 77,
+          "eight_plus_eur": 52
+        },
+        {
+          "city": "Boston",
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        },
+        {
+          "city": "Chicago",
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        },
+        {
+          "city": "Houston",
+          "full_day_eur": 62,
+          "eight_plus_eur": 41
+        },
+        {
+          "city": "Los Angeles",
+          "full_day_eur": 64,
+          "eight_plus_eur": 43
+        },
+        {
+          "city": "Miami",
+          "full_day_eur": 65,
+          "eight_plus_eur": 44
+        },
+        {
+          "city": "New York City",
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        },
+        {
+          "city": "San Francisco",
+          "full_day_eur": 59,
+          "eight_plus_eur": 40
+        },
+        {
+          "city": "Washington D.C.",
+          "full_day_eur": 66,
+          "eight_plus_eur": 44
+        }
+      ]
+    },
+    {
+      "country": "Uruguay",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 40,
+          "eight_plus_eur": 27
+        }
+      ]
+    },
+    {
+      "country": "Uzbekistan",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 34,
+          "eight_plus_eur": 23
+        }
+      ]
+    },
+    {
+      "country": "Vatican City",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 48,
+          "eight_plus_eur": 32
+        }
+      ]
+    },
+    {
+      "country": "Venezuela",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 45,
+          "eight_plus_eur": 30
+        }
+      ]
+    },
+    {
+      "country": "Vietnam",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 36,
+          "eight_plus_eur": 24
+        }
+      ]
+    },
+    {
+      "country": "Yemen",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 24,
+          "eight_plus_eur": 16
+        }
+      ]
+    },
+    {
+      "country": "Zambia",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 38,
+          "eight_plus_eur": 25
+        }
+      ]
+    },
+    {
+      "country": "Zimbabwe",
+      "entries": [
+        {
+          "city": null,
+          "full_day_eur": 63,
+          "eight_plus_eur": 42
+        }
+      ]
+    }
+  ]
+}
