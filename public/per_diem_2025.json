@@ -654,6 +654,21 @@
       ]
     },
     {
+      "country": "Germany",
+      "entries": [
+        {
+          "city": "Berlin",
+          "full_day_eur": 0,
+          "eight_plus_eur": 0
+        },
+        {
+          "city": "Other",
+          "full_day_eur": 28,
+          "eight_plus_eur": 14
+        }
+      ]
+    },
+    {
       "country": "Ghana",
       "entries": [
         {

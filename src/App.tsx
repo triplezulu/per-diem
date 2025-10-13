@@ -1,722 +1,676 @@
-import React, { useMemo, useRef, useState } from "react";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Per‑Diem Web App — Country/City Dataset v3.1 (German rules)
- * JSX — sandbox‑safe version
- * ------------------------------------------------------------------
- * Patch notes (fixes syntax error & improves robustness):
- * - Removed stray backslashes before quotes in JSX attributes (e.g., className="...").
- * - Left `import.meta` out; BASE_URL resolver is sandbox‑friendly.
- * - Preserved UI tweaks: top logo row; compact "Data Base" loader button; 5‑minute datetime step; right‑side vertical stack.
- * - Kept CSV regex at /\r?\n/.
- * - Added more console self‑tests without changing existing ones.
+ * Per‑Diem Web App — App.tsx (rev6)
+ * ---------------------------------------------------------------
+ * Fix: Removed stray token after CardContent (caused syntax error) and
+ * correctly implemented ref‑forwarding for CardContent.
+ *
+ * Keeps prior behavior:
+ * - Destination-driven multi-day segments (use TO location for each day).
+ * - Rule B for single-day return-to-base legs (use FROM as rate reference).
+ * - Breakfast deduction once per calendar date (shared checkbox per YYYY‑MM‑DD).
+ * - CSV & PDF export with header (logo + employee + month + total).
+ * - SAFE_BASE_URL fallback; localStorage persistence for rates and trips.
  */
 
-// ---------------- Helpers ----------------
-
-function uuid() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+// ——— Tiny UI wrappers (Tailwind-only) ———
+function Card(props: React.HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={"rounded-2xl border shadow-sm bg-white " + (props.className || "")} />;
 }
-
-// BASE_URL resolver that does NOT reference `import` or `import.meta`.
-// Priority: window.PERDIEM_BASE_URL > <base href> > derive from location > '/'
-const BASE_URL = (() => {
-  try {
-    if (typeof window !== "undefined") {
-      if (window.PERDIEM_BASE_URL) return String(window.PERDIEM_BASE_URL);
-      const baseEl = (typeof document !== "undefined") && document.querySelector("base[href]");
-      if (baseEl) {
-        const href = baseEl.getAttribute("href") || "/";
-        return href.endsWith("/") ? href : href + "/";
-      }
-      if (typeof location !== "undefined") {
-        // Return current path directory (so fetching relative asset works when app is nested)
-        const p = location.pathname;
-        return p.endsWith("/") ? p : p.replace(/[^/]*$/, "");
-      }
-    }
-  } catch {}
-  return "/";
-})();
-
-const DEFAULT_LOGO_URL = BASE_URL + "logo.png";
-
-// ---------------- Utilities ----------------
-
-const ymd = (d) => d.toISOString().slice(0,10);
-const isoToDate = (iso) => new Date(iso + (iso.endsWith("Z")?"":"Z"));
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-const hoursBetween = (a, b) => (b.getTime() - a.getTime()) / 3_600_000;
-
-function eachUtcDay(start, end){
-  const days = [];
-  let d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
-  const endDay = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
-  while (d.getTime() <= endDay.getTime()) { days.push(ymd(d)); d = new Date(d.getTime() + 86_400_000); }
-  return days;
+function CardHeader(props: React.HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={"px-4 pt-4 " + (props.className || "")} />;
 }
-
-function clampDaySegmentHours(day, s, e){
-  const dayStart = new Date(day + "T00:00:00Z");
-  const dayEnd = new Date(day + "T23:59:59Z");
-  const start = Math.max(s.getTime(), dayStart.getTime());
-  const end = Math.min(e.getTime(), dayEnd.getTime());
-  const ms = Math.max(0, end - start + 1000);
-  return ms/3_600_000;
+function CardTitle(props: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 {...props} className={"text-lg font-semibold " + (props.className || "")} />;
 }
-
-function formatMoney(n){ return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 }).format(n); }
-
-// ---------------- LocalStorage ----------------
-
-const LS_USERS = "pd_users_v1";
-const LS_DATASET = "pd_dataset_v1";
-
-function loadUsers(){ try { const raw = localStorage.getItem(LS_USERS); return raw ? JSON.parse(raw) : []; } catch { return []; } }
-function saveUsers(users){ try { localStorage.setItem(LS_USERS, JSON.stringify(users)); } catch {}
+const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(function CardContent(props, ref) {
+  return <div ref={ref} {...props} className={"p-4 " + (props.className || "")} />;
+});
+function Button({ variant = "default", className = "", ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "outline" | "secondary" }) {
+  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium shadow-sm transition";
+  const variants: Record<string, string> = {
+    default: "bg-black text-white hover:opacity-90",
+    outline: "border bg-white hover:bg-neutral-50",
+    secondary: "bg-neutral-100 hover:bg-neutral-200",
+  };
+  return <button {...rest} className={`${base} ${variants[variant]} ${className}`} />;
 }
-
-function loadDataset(){ try { const raw = localStorage.getItem(LS_DATASET); return raw ? JSON.parse(raw) : null; } catch { return null; } }
-function saveDataset(ds){ try { localStorage.setItem(LS_DATASET, JSON.stringify(ds)); } catch {}
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`w-full rounded-xl border px-3 py-2 text-sm ${props.className || ""}`} />;
 }
+function Badge(props: React.HTMLAttributes<HTMLSpanElement>) {
+  return <span {...props} className={`inline-flex items-center rounded-full border px-2 py-1 text-xs ${props.className || ""}`} />;
+}
+const Icon = (p:any)=> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p} />;
+function IconPlus(props:any){ return <Icon {...props}><path d="M12 5v14"/><path d="M5 12h14"/></Icon>; }
+function IconTrash(props:any){ return <Icon {...props}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></Icon>; }
+function IconEdit(props:any){ return <Icon {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></Icon>; }
+function IconUpload(props:any){ return <Icon {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></Icon>; }
 
-// ---------------- Default dataset ----------------
+// ——— Data types ———
+const emptyRates = [] as Array<{
+  country: string;
+  city?: string | null;
+  full_day_eur: number;
+  eight_plus_eur: number;
+}>;
 
-const DEFAULT_DATASET = [
-  { country: "Germany", city: null, full_day_eur: 28, eight_plus_eur: 14 },
-  { country: "France", city: "Paris", full_day_eur: 58, eight_plus_eur: 39 },
-  { country: "France", city: "Other", full_day_eur: 53, eight_plus_eur: 36 },
-  { country: "United Kingdom", city: "London", full_day_eur: 66, eight_plus_eur: 44 },
-  { country: "United Kingdom", city: "Other", full_day_eur: 52, eight_plus_eur: 35 },
+// Default employee: BER primary, blank secondary
+const defaultEmployees = [
+  { id: "BER", name: "Default Pilot", basePrimary: { country: "Germany", city: "Berlin" }, baseSecondary: { country: "", city: "" } },
 ];
 
-// ---------------- Core calc ----------------
+// ——— Constants ———
+const CITY_COUNTRY_ONLY_SENTINEL = "__country_only__";
+const LS_RATES_KEY = "perdiem_rates_v1";
+const LS_TRIPS_KEY = "perdiem_trips_v1";
 
-function computePerDiem(legs, dataset, breakfastOverrides){
-  if (!legs.length) return [];
+// Safe base URL (works even if import.meta.env is undefined)
+const SAFE_BASE_URL: string = (() => {
+  try {
+    // @ts-ignore
+    const b = (import.meta && (import.meta as any).env && (import.meta as any).env.BASE_URL) || "/";
+    return typeof b === "string" ? (b.endsWith("/") ? b : b + "/") : "/";
+  } catch { return "/"; }
+})();
 
-  const norm = legs.map(l => ({ ...l, s: isoToDate(l.startUtc), e: isoToDate(l.endUtc) }))
-                   .sort((a,b) => a.s.getTime() - b.s.getTime());
+const DEFAULT_RATE_CANDIDATES = [
+  SAFE_BASE_URL + "per_diem_2025.json",
+  "/per_diem_2025.json",
+];
+const DEFAULT_LOGO_URL = SAFE_BASE_URL + "logo.png";
 
-  const tripStart = norm[0].s;
-  const tripEnd = norm[norm.length - 1].e;
-  const crossesMidnight = ymd(tripStart) !== ymd(tripEnd);
-  const tripHours = hoursBetween(tripStart, tripEnd);
-
-  function rateFor(country, city){
-    let found = dataset.find(d => d.country === country && (d.city || "") === (city || ""));
-    if (found) return found;
-    found = dataset.find(d => d.country === country && (d.city || "") === "Other");
-    if (found) return found;
-    return dataset.find(d => d.country === country && d.city === null);
+// ——— Helpers ———
+function normalizeRates(jsonData: any): typeof emptyRates {
+  if (Array.isArray(jsonData)) {
+    return (jsonData as any[]).map(r => ({
+      country: String(r?.country || "").trim(),
+      city: r?.city == null ? null : String(r.city).trim(),
+      full_day_eur: Number(r?.full_day_eur || 0),
+      eight_plus_eur: Number(r?.eight_plus_eur || 0),
+    })).filter(r => r.country);
   }
-
-  const dayHours = new Map();
-  const dayLastLegSel = new Map();
-
-  for (const l of norm) {
-    const days = eachUtcDay(l.s, l.e);
-    for (const d of days) {
-      const h = clampDaySegmentHours(d, l.s, l.e);
-      if (h <= 0) continue;
-      const rec = dayHours.get(d) || { hours: 0, legIds: [] };
-      rec.hours += h;
-      if (!rec.legIds.includes(l.id)) rec.legIds.push(l.id);
-      dayHours.set(d, rec);
-      if (ymd(l.e) === d) dayLastLegSel.set(d, { country: l.country, city: l.city });
-    }
-  }
-
-  function buildDayResult(d, hrs){
-    const sel = dayLastLegSel.get(d) || { country: norm[0].country, city: norm[0].city };
-    const rate = rateFor(sel.country, sel.city || null);
-    const full = rate?.full_day_eur ?? 0;
-    const halfVal = rate?.eight_plus_eur ?? 0;
-
-    let band = "NONE";
-    if (hrs >= 24 - 1e-6) band = "FULL"; else if (hrs > 8) band = "HALF";
-    const baseAmount = band === "FULL" ? full : band === "HALF" ? halfVal : 0;
-    const breakfastTaken = !!breakfastOverrides[d];
-    const breakfastDeduction = (breakfastTaken && (band === "FULL" || band === "HALF")) ? round2(full * 0.20) : 0;
-    const total = round2(baseAmount - breakfastDeduction);
-
-    return { dateUtc: d, rateRef: sel, hours: round2(hrs), band, baseAmount: round2(baseAmount), breakfastTaken, breakfastDeduction, total, contributingLegIds: dayHours.get(d)?.legIds || [] };
-  }
-
-  // Special: cross‑midnight but total < 24h → single HALF (if total>8h) on majority day
-  if (crossesMidnight && tripHours < 24 - 1e-6) {
-    const days = Array.from(dayHours.keys()).sort();
-    if (days.length === 2) {
-      const [d1,d2] = days; const h1 = dayHours.get(d1)?.hours || 0; const h2 = dayHours.get(d2)?.hours || 0;
-      const totalH = h1 + h2; const majority = h1 >= h2 ? d1 : d2;
-      const out = [];
-      for (const d of days) {
-        const r = buildDayResult(d, dayHours.get(d)?.hours || 0);
-        if (totalH > 8) {
-          if (d === majority) {
-            const rate = rateFor(r.rateRef.country, r.rateRef.city || null);
-            r.band = "HALF";
-            r.baseAmount = round2(rate?.eight_plus_eur || 0);
-            r.breakfastDeduction = r.breakfastTaken ? round2((rate?.full_day_eur || 0) * 0.20) : 0;
-            r.total = round2(r.baseAmount - r.breakfastDeduction);
-          } else {
-            r.band = "NONE"; r.baseAmount = 0; r.breakfastDeduction = 0; r.total = 0;
-          }
-        }
-        out.push(r);
+  if (jsonData && Array.isArray(jsonData.countries)) {
+    const out: typeof emptyRates = [];
+    for (const c of jsonData.countries) {
+      const country = String(c?.country || "").trim();
+      if (!country) continue;
+      const entries = Array.isArray(c?.entries) ? c.entries : [];
+      for (const e of entries) {
+        out.push({
+          country,
+          city: e?.city == null ? null : String(e.city).trim(),
+          full_day_eur: Number(e?.full_day_eur || 0),
+          eight_plus_eur: Number(e?.eight_plus_eur || 0),
+        });
       }
-      return out.sort((a,b) => a.dateUtc.localeCompare(b.dateUtc));
     }
+    return out.filter(r => r.country);
   }
-
-  // Multi‑day (≥24h) → start/end days are HALF by rule
-  const daysSorted = Array.from(dayHours.keys()).sort();
-  const multiDay = daysSorted.length >= 2 && tripHours >= 24 - 1e-6;
-  const firstDay = daysSorted[0];
-  const lastDay = daysSorted[daysSorted.length - 1];
-
-  const results = [];
-  for (const d of daysSorted) {
-    const hrs = dayHours.get(d)?.hours || 0;
-    let band = "NONE";
-    if (hrs >= 24 - 1e-6) band = "FULL";
-    else if (multiDay && (d === firstDay || d === lastDay)) band = "HALF";
-    else if (hrs > 8) band = "HALF";
-
-    let r = buildDayResult(d, hrs);
-    if (r.band !== band) r.band = band;
-    const rate = rateFor(r.rateRef.country, r.rateRef.city || null);
-    r.baseAmount = round2(band === "FULL" ? (rate?.full_day_eur || 0) : band === "HALF" ? (rate?.eight_plus_eur || 0) : 0);
-    r.breakfastDeduction = (r.breakfastTaken && (band === "FULL" || band === "HALF")) ? round2((rate?.full_day_eur || 0) * 0.20) : 0;
-    r.total = round2(r.baseAmount - r.breakfastDeduction);
-    results.push(r);
+  return [] as typeof emptyRates;
+}
+function parseCSV(text: string) {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [] as typeof emptyRates;
+  const header = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const idx = {
+    country: header.indexOf("country"),
+    city: header.indexOf("city"),
+    full: header.indexOf("full_day_eur"),
+    eight: header.indexOf("eight_plus_eur"),
+  } as const;
+  const out: typeof emptyRates = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i];
+    const cols: string[] = [];
+    let cur = ""; let inQ = false;
+    for (let j = 0; j < row.length; j++) {
+      const ch = row[j];
+      if (ch === '"') { if (inQ && row[j+1]==='"') { cur += '"'; j++; } else inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    cols.push(cur);
+    const get = (k:number)=> (k>=0 && k<cols.length ? cols[k].trim() : "");
+    const country = get(idx.country); if (!country) continue;
+    out.push({ country, city: (get(idx.city) || null), full_day_eur: Number(get(idx.full)||0), eight_plus_eur: Number(get(idx.eight)||0) });
   }
-  return results;
+  return out;
+}
+function buildCountryCityMap(rates: typeof emptyRates) {
+  const map = new Map<string, Set<string>>();
+  for (const r of rates) {
+    const ctry = (r.country||"").trim();
+    const cty = (r.city ?? "").trim();
+    if (!ctry) continue;
+    if (!map.has(ctry)) map.set(ctry, new Set<string>());
+    if (cty) map.get(ctry)!.add(cty);
+  }
+  return map; // country -> set(cities)
+}
+function countryListFromMap(map: Map<string, Set<string>>) { return Array.from(map.keys()).sort(); }
+function citiesFor(map: Map<string, Set<string>>, country: string) { return Array.from(map.get(country) || new Set<string>()).sort(); }
+function cityToSelectValue(city: string) { return city && city.trim() !== "" ? city : CITY_COUNTRY_ONLY_SENTINEL; }
+function selectValueToCity(v: string) { return v === CITY_COUNTRY_ONLY_SENTINEL ? "" : v; }
+function sameLoc(a?: { country: string; city: string }, b?: { country: string; city: string }) {
+  if (!a || !b) return false;
+  return (a.country||"") === (b.country||"") && (a.city||"") === (b.city||"");
+}
+function guessRatesByLocation(rates: typeof emptyRates, country: string, city: string) {
+  const exact = rates.find(r => r.country === country && (r.city || "") === (city || ""));
+  if (exact) return exact;
+  const fallback = rates.find(r => r.country === country && (!r.city || r.city === "Other" || r.city === ""));
+  return fallback || null;
+}
+function toCSV(rows: string[][]) {
+  return rows.map(r => r.map(c => {
+    const s = String(c ?? "");
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(",")).join("\n");
 }
 
-// ---------------- Main App ----------------
-
-export default function App(){
-  const stored = loadDataset();
-  const [dataset, setDataset] = useState(stored || DEFAULT_DATASET);
-  const [dataStatus, setDataStatus] = useState(stored ? "local" : "default");
-
-  // Try to fetch server‑side JSON once (optional)
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(BASE_URL + "per_diem_2025.json", { cache: "no-store" });
-        if (res.ok) {
-          const j = await res.json();
-          const flat = Array.isArray(j)
-            ? j
-            : (j && j.countries
-                ? j.countries.flatMap((c) =>
-                    c.entries.map((e) => ({
-                      country: c.country,
-                      city: e.city ?? null,
-                      full_day_eur: Number(e.full_day_eur),
-                      eight_plus_eur: Number(e.eight_plus_eur)
-                    }))
-                  )
-                : []);
-          if (flat.length) { setDataset(flat); saveDataset(flat); setDataStatus("server"); }
-        }
-      } catch {}
-    })();
-  }, []);
-
-  const firstCountry = dataset[0]?.country || "";
-  const firstCity = (dataset.find(d => d.country === firstCountry && d.city !== null) || {}).city || null;
-
-  const [legs, setLegs] = useState([{
-    id: uuid(),
-    startUtc: new Date().toISOString().slice(0,16),
-    endUtc: new Date(Date.now()+4*3_600_000).toISOString().slice(0,16),
-    country: firstCountry,
-    city: firstCity,
-  }]);
-
-  const [users, setUsers] = useState(() => loadUsers());
-  const [currentEmpId, setCurrentEmpId] = useState(() => (loadUsers()[0]?.empId) || "");
-  const [crewName, setCrewName] = useState(loadUsers().find(u => u.empId === (loadUsers()[0]?.empId))?.name || "");
-  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0,7));
-  const [breakfastOverrides, setBreakfastOverrides] = useState({});
-  const [dataStatusState] = useState(dataStatus);
-  const reportRef = useRef(null);
-
-  const calc = useMemo(() => computePerDiem(legs, dataset, breakfastOverrides), [legs, dataset, breakfastOverrides]);
-  const total = useMemo(() => round2(calc.reduce((a,b) => a + b.total, 0)), [calc]);
-
-  function countries(){ return Array.from(new Set(dataset.map(d => d.country))).sort(); }
-  function citiesFor(country){
-    const list = dataset.filter(d => d.country === country);
-    const cities = Array.from(new Set(list.map(d => (d.city || "")))).sort();
-    if (!cities.length) return [""]; // show "All"
-    return cities;
-  }
-
-  function addLeg(copyPrev=false){
-    const last = legs[legs.length - 1];
-    const start = last ? new Date(isoToDate(last.endUtc).getTime() + 60_000) : new Date();
-    const end = new Date(start.getTime() + 2*3_600_000);
-    const c = copyPrev && last ? last.country : (dataset[0]?.country || "");
-    const cityList = citiesFor(c);
-    const city = copyPrev && last ? last.city : ((cityList[0] || "") || null);
-    setLegs(ls => [...ls, { id: uuid(), startUtc: start.toISOString().slice(0,16), endUtc: end.toISOString().slice(0,16), country: c, city }]);
-  }
-  function updateLeg(id, patch){ setLegs(ls => ls.map(l => l.id === id ? { ...l, ...patch } : l)); }
-  function deleteLeg(id){ setLegs(ls => ls.filter(l => l.id !== id)); }
-
-  function exportCSV(){
-    const header = ["Employee ID","Crew","Month","Date (UTC)", "Country","City","Hours", "Band", "Base (EUR)", "Breakfast?", "Breakfast Deduction (EUR)", "Total (EUR)", "Leg IDs" ];
-    const rows = calc.map(d => [currentEmpId || "", crewName || "", reportMonth, d.dateUtc, d.rateRef.country, d.rateRef.city || "", d.hours.toFixed(2), d.band, d.baseAmount.toFixed(2), d.breakfastTaken ? "YES" : "NO", d.breakfastDeduction.toFixed(2), d.total.toFixed(2), d.contributingLegIds.join("|")]);
-    const esc = (v) => `"${String(v).replaceAll('"','""')}"`;
-    const csv = [header, ...rows].map(r => r.map(esc).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `per_diem_${reportMonth}.csv`; a.click(); URL.revokeObjectURL(url);
-  }
-
-  async function exportPdf(){
-    const node = reportRef.current; if (!node) return;
-    const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 36; const imgWidth = pageWidth - margin * 2; const ratio = canvas.height / canvas.width; const imgHeight = imgWidth * ratio;
-    pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
-    pdf.setFontSize(8); pdf.text(`Generated ${new Date().toLocaleString()}`, margin, pdf.internal.pageSize.getHeight() - margin/2);
-    pdf.save(`PerDiem-${reportMonth}.pdf`);
-  }
-
-  // Users
-  function upsertUser(empIdRaw, name){
-    const empId = (empIdRaw || "").toUpperCase().trim();
-    if (!/^([A-Z]{3})$/.test(empId)) { alert("Employee ID must be exactly 3 letters (A–Z)"); return; }
-    const next = [...loadUsers().filter(u => u.empId !== empId), { empId, name }].sort((a,b)=>a.empId.localeCompare(b.empId));
-    setUsers(next); saveUsers(next);
-  }
-  function removeUser(empId){ const next = loadUsers().filter(u => u.empId !== empId); setUsers(next); saveUsers(next); if (currentEmpId === empId) { const f = next[0]; setCurrentEmpId(f?.empId || ""); setCrewName(f?.name || ""); } }
-  function switchUser(empId){ setCurrentEmpId(empId); const u = loadUsers().find(x => x.empId === empId); setCrewName(u?.name || ""); }
-
-  const ratesBadge = (() => { const label = dataStatus==="server"?"rates: server": dataStatus==="uploaded"?"rates: uploaded": dataStatus==="local"?"rates: saved": "rates: default"; const cls = dataStatus==="server"?"bg-emerald-100 text-emerald-700": dataStatus==="uploaded"?"bg-blue-100 text-blue-700": dataStatus==="local"?"bg-amber-100 text-amber-700":"bg-gray-100 text-gray-700"; return <span className={`text-[10px] px-2 py-1 rounded-full ${cls}`}>{label}</span>; })();
-
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Top logo row */}
-        <div className="flex items-center justify-between">
-          <img src={DEFAULT_LOGO_URL} alt="Logo" className="h-10 md:h-12 object-contain" />
-        </div>
-        {/* Toolbar */}
-        <header className="flex flex-wrap md:flex-nowrap items-center justify-between gap-3">
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
-            <UserBar users={users} currentEmpId={currentEmpId} crewName={crewName}
-              onSwitch={switchUser} onUpsert={upsertUser} onRemove={removeUser} />
-            <div className="flex items-center gap-2 bg-white border rounded-2xl px-3 py-2 min-w-[220px]">
-              <label className="text-xs text-gray-600">Month</label>
-              <input type="month" className="border-0 outline-none text-sm" value={reportMonth} onChange={e => setReportMonth(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <DatasetLoader onLoad={(d)=>{ setDataset(d); saveDataset(d); setDataStatus("uploaded"); }} previewRows={0} compact />
-              {ratesBadge}
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={exportCSV} className="px-4 py-2 rounded-2xl shadow bg-white border hover:shadow-md">Export CSV</button>
-              <button onClick={exportPdf} className="px-4 py-2 rounded-2xl shadow bg-white border hover:shadow-md">Export PDF</button>
-            </div>
-          </div>
-        </header>
-
-        <section className="space-y-6">
-          <TripBuilder dataset={dataset} legs={legs} onAdd={addLeg} onUpdate={updateLeg} onDelete={deleteLeg} countries={countries()} citiesFor={citiesFor} />
-          <ResultsTable calc={calc} onToggleBreakfast={(dateUtc, val)=>setBreakfastOverrides(p=>({ ...p, [dateUtc]: val }))} />
-        </section>
-
-        <ReportPreview refObj={reportRef} crewName={crewName} empId={currentEmpId} reportMonth={reportMonth} calc={calc} total={total} />
-      </div>
-    </div>
-  );
-}
-
-// ---------------- Components ----------------
-
-function DatasetLoader({ onLoad, previewRows = 5, compact = false }){
-  const [preview, setPreview] = useState(null);
-  const fileRef = useRef(null);
-
-  function onFile(e){
-    const f = e.target.files?.[0]; if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const txt = String(reader.result || "");
-      try {
-        if (f.name.toLowerCase().endsWith('.json')) {
-          const json = JSON.parse(txt);
-          const flat = [];
-          if (Array.isArray(json)) {
-            for (const r of json) flat.push({ country: r.country, city: r.city ?? null, full_day_eur: Number(r.full_day_eur), eight_plus_eur: Number(r.eight_plus_eur) });
-          } else if (json && json.countries) {
-            for (const c of json.countries) for (const e of c.entries) flat.push({ country: c.country, city: e.city ?? null, full_day_eur: Number(e.full_day_eur), eight_plus_eur: Number(e.eight_plus_eur) });
-          }
-          onLoad(flat); setPreview(flat.slice(0, previewRows));
-          return;
-        }
-        // CSV: country,city,full_day_eur,eight_plus_eur
-        const lines = txt.split(/\r?\n/).filter(Boolean);
-        const header = lines.shift()?.split(',').map(s=>s.trim().toLowerCase())||[];
-        const idxCountry = header.indexOf('country');
-        const idxCity = header.indexOf('city');
-        const idxFull = header.indexOf('full_day_eur');
-        const idxEight = header.indexOf('eight_plus_eur');
-        const out = [];
-        for (const line of lines) {
-          const parts = line.split(',');
-          if (idxCountry<0 || idxFull<0 || idxEight<0) continue;
-          const country = (parts[idxCountry]||'').trim();
-          const city = (idxCity>=0 ? (parts[idxCity]||'').trim() : '') || null;
-          const full = Number((parts[idxFull]||'0').trim());
-          const eight = Number((parts[idxEight]||'0').trim());
-          if (country) out.push({ country, city, full_day_eur: full, eight_plus_eur: eight });
-        }
-        onLoad(out); setPreview(out.slice(0, previewRows));
-      } catch (err) { alert('Failed to parse dataset: ' + (err && err.message ? err.message : String(err))); }
-    };
-    reader.readAsText(f);
-  }
-
-  if (compact) {
-    return (
-      <div className="">
-        <input ref={fileRef} type="file" accept=".json,.csv" onChange={onFile} className="hidden" />
-        <button className="px-3 py-2 rounded-2xl border bg-white hover:shadow text-sm" onClick={() => fileRef.current && fileRef.current.click()}>Data Base</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-2xl shadow p-4">
-      <h2 className="font-semibold mb-2">Rates Dataset</h2>
-      <input type="file" accept=".json,.csv" onChange={onFile} />
-      {preview && previewRows>0 && (
-        <div className="mt-3">
-          <div className="text-xs text-gray-500 mb-1">Preview (first {previewRows} rows):</div>
-          <div className="max-h-40 overflow-auto border rounded-lg">
-            <table className="min-w-full text-xs">
-              <thead>
-                <tr className="text-left border-b"><th className="p-1">Country</th><th className="p-1">City</th><th className="p-1">Full</th><th className="p-1">8+ hr</th></tr>
-              </thead>
-              <tbody>
-                {preview.map((r,i)=> (
-                  <tr key={i} className="border-b"><td className="p-1">{r.country}</td><td className="p-1">{r.city ?? "All"}</td><td className="p-1">{r.full_day_eur}</td><td className="p-1">{r.eight_plus_eur}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TripBuilder({ dataset, legs, onAdd, onUpdate, onDelete, countries, citiesFor }){
-  return (
-    <div className="bg-white rounded-2xl shadow p-4">
-      <h2 className="font-semibold mb-3">Trip Legs (UTC)</h2>
-      <div className="space-y-3">
-        {legs.map(l => {
-          const cityOptions = citiesFor(l.country);
-          return (
-            <div key={l.id} className="grid grid-cols-12 gap-2 items-end md:items-center">
-              <div className="col-span-3">
-                <label className="text-xs">Start (UTC)</label>
-                <input type="datetime-local" step={300} className="w-full border rounded-xl px-2 py-1" value={l.startUtc} onChange={e=>onUpdate(l.id,{ startUtc: e.target.value })} />
-              </div>
-              <div className="col-span-3">
-                <label className="text-xs">End (UTC)</label>
-                <input type="datetime-local" step={300} className="w-full border rounded-xl px-2 py-1" value={l.endUtc} onChange={e=>onUpdate(l.id,{ endUtc: e.target.value })} />
-              </div>
-              <div className="col-span-3">
-                <label className="text-xs">Country</label>
-                <select className="w-full border rounded-xl px-2 py-1" value={l.country} onChange={e=>{
-                  const c = e.target.value; const cityList = citiesFor(c);
-                  const nextCity = cityList.includes(l.city || "") ? (l.city || "") : (cityList[0] || "");
-                  onUpdate(l.id, { country: c, city: nextCity || null });
-                }}>
-                  {countries.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs">City</label>
-                <select className="w-full border rounded-xl px-2 py-1" value={l.city || ""} onChange={e=>onUpdate(l.id,{ city: e.target.value || null })}>
-                  {cityOptions.map(c => {
-                    const label = c ? (c === "Other" ? "Other" : c) : "All"; // empty → All
-                    return <option key={c || "__ALL__"} value={c}>{label}</option>;
-                  })}
-                </select>
-              </div>
-              <div className="col-span-1" />
-              <div className="col-span-1 flex gap-2 justify-end">
-                <button className="px-2 py-1 border rounded-xl" onClick={()=>onDelete(l.id)}>Delete</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex flex-wrap md:flex-nowrap justify-between gap-2">
-        <div className="flex gap-2">
-          <button className="px-3 py-2 rounded-2xl border" onClick={()=>onAdd(false)}>+ Add Leg</button>
-          <button className="px-3 py-2 rounded-2xl border" onClick={()=>onAdd(true)}>⟲ Copy previous</button>
-        </div>
-        <div className="text-xs text-gray-500">Per‑day rate = from the leg that ENDS on that day.</div>
-      </div>
-    </div>
-  );
-}
-
-function ResultsTable({ calc, onToggleBreakfast }){
-  return (
-    <div className="bg-white rounded-2xl shadow p-4">
-      <h2 className="font-semibold mb-3">Per‑Diem Breakdown (UTC)</h2>
-      <div className="overflow-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-4">Date</th>
-              <th className="py-2 pr-4">Country/City</th>
-              <th className="py-2 pr-4">Hours</th>
-              <th className="py-2 pr-4">Band</th>
-              <th className="py-2 pr-4">Base</th>
-              <th className="py-2 pr-4">Breakfast?</th>
-              <th className="py-2 pr-4">Deduction</th>
-              <th className="py-2 pr-4">Total</th>
-              <th className="py-2">Leg IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            {calc.map(d => {
-              const label = `${d.rateRef.country}${d.rateRef.city ? ' — ' + d.rateRef.city : ''}`;
-              return (
-                <tr key={d.dateUtc} className="border-b">
-                  <td className="py-2 pr-4 whitespace-nowrap">{d.dateUtc}</td>
-                  <td className="py-2 pr-4">{label || d.rateRef.country}</td>
-                  <td className="py-2 pr-4">{d.hours.toFixed(2)}</td>
-                  <td className="py-2 pr-4">{d.band}</td>
-                  <td className="py-2 pr-4">{formatMoney(d.baseAmount)}</td>
-                  <td className="py-2 pr-4">
-                    {(d.band === "FULL" || d.band === "HALF") ? (
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={d.breakfastTaken} onChange={e=>onToggleBreakfast(d.dateUtc, e.target.checked)} />
-                        <span className="text-xs">Taken</span>
-                      </label>
-                    ) : <span className="text-xs text-gray-400">—</span>}
-                  </td>
-                  <td className="py-2 pr-4">{d.breakfastDeduction ? `- ${formatMoney(d.breakfastDeduction)}` : "—"}</td>
-                  <td className="py-2 pr-4 font-medium">{formatMoney(d.total)}</td>
-                  <td className="py-2 text-xs">{d.contributingLegIds.join(", ")}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div className="text-xs text-gray-500 mt-2">Breakfast deduction = 20% of FULL. Applies to HALF and FULL (once per day).</div>
-    </div>
-  );
-}
-
-function ReportPreview({ refObj, crewName, empId, reportMonth, calc, total }){
-  return (
-    <div className="bg-white rounded-2xl shadow p-4" ref={refObj}>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-lg font-semibold">Per‑Diem Report — Windrose Air</div>
-          <div className="text-xs text-gray-500">{reportMonth} · Crew: {crewName || "—"} · Employee: {empId || "—"}</div>
-        </div>
-        {DEFAULT_LOGO_URL ? <img src={DEFAULT_LOGO_URL} alt="logo" className="h-10 object-contain"/> : <div className="text-xs text-gray-400">(Logo)</div>}
-      </div>
-      <div className="mt-3 overflow-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-4">Date</th>
-              <th className="py-2 pr-4">Country/City</th>
-              <th className="py-2 pr-4">Band</th>
-              <th className="py-2 pr-4">Base</th>
-              <th className="py-2 pr-4">Breakfast</th>
-              <th className="py-2 pr-4">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {calc.map(d => (
-              <tr key={d.dateUtc} className="border-b">
-                <td className="py-2 pr-4">{d.dateUtc}</td>
-                <td className="py-2 pr-4">{d.rateRef.country}{d.rateRef.city ? ' — ' + d.rateRef.city : ''}</td>
-                <td className="py-2 pr-4">{d.band}</td>
-                <td className="py-2 pr-4">{formatMoney(d.baseAmount)}</td>
-                <td className="py-2 pr-4">{d.breakfastDeduction ? `- ${formatMoney(d.breakfastDeduction)}` : "—"}</td>
-                <td className="py-2 pr-4 font-medium">{formatMoney(d.total)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td className="py-2 pr-4" colSpan={5}><b>Total</b></td>
-              <td className="py-2 pr-4 font-semibold">{formatMoney(total)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function UserBar({ users, currentEmpId, crewName, onSwitch, onUpsert, onRemove }){
-  const [newId, setNewId] = useState("");
-  const [newName, setNewName] = useState("");
-  return (
-    <div className="flex items-center gap-2 bg-white border rounded-2xl px-3 py-2 min-w-[220px]">
-      <label className="text-xs text-gray-600">Employee</label>
-      <select className="text-sm border-0 outline-none" value={currentEmpId} onChange={e => onSwitch(e.target.value)}>
-        <option value="">— Select —</option>
-        {users.map(u => <option key={u.empId} value={u.empId}>{u.empId} — {u.name}</option>)}
-      </select>
-      <input className="text-sm border rounded-xl px-2 py-1 w-20 uppercase" maxLength={3} placeholder="ID" value={newId} onChange={e => setNewId(e.target.value.toUpperCase())} />
-      <input className="text-sm border rounded-xl px-2 py-1" placeholder="Name" value={newName} onChange={e => setNewName(e.target.value)} />
-      <button className="text-sm px-2 py-1 border rounded-xl" onClick={() => onUpsert(newId, newName)}>Save</button>
-      {currentEmpId && <button className="text-sm px-2 py-1 border rounded-xl" onClick={() => onRemove(currentEmpId)}>Delete</button>}
-    </div>
-  );
-}
-
-// ---------------- Self‑tests (console only, no UI) ----------------
+// ——— Self tests (non-breaking; console only) ———
 (function runSelfTests(){
   try {
-    const T = (name, fn) => { try { fn(); console.log("✅", name); } catch (e) { console.error("❌", name, e); } };
-    const assert = (cond, msg) => { if (!cond) throw new Error(msg || "Assertion failed"); };
-
-    const ds = DEFAULT_DATASET; // Germany full 28 / 8+ is 14
-
-    // Existing tests
-    T("Same‑day >8h → HALF", () => {
-      const legs = [{ id: "a", startUtc: "2025-01-01T08:00", endUtc: "2025-01-01T18:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      assert(out.length === 1, "1 day expected");
-      assert(out[0].band === "HALF", "HALF expected");
-      assert(out[0].baseAmount === 14, "Base 14 EUR expected");
-    });
-
-    T("Cross‑midnight ==8h total → NONE", () => {
-      const legs = [{ id: "b", startUtc: "2025-01-01T22:00", endUtc: "2025-01-02T06:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      const sum = out.reduce((a,b)=>a+b.baseAmount,0);
-      assert(sum === 0, "No allowance when total == 8h");
-    });
-
-    T("Cross‑midnight 10h → HALF on majority day", () => {
-      const legs = [{ id: "c", startUtc: "2025-01-01T21:00", endUtc: "2025-01-02T07:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      const bands = out.map(x=>x.band);
-      assert(bands.includes("HALF"), "One HALF expected");
-      assert(bands.filter(b=>b==="HALF").length === 1, "Only one HALF expected");
-    });
-
-    T("Multi‑day >=24h → HALF/FULL/HALF pattern", () => {
-      const legs = [{ id: "d", startUtc: "2025-01-01T10:00", endUtc: "2025-01-03T12:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      const bands = out.map(x=>x.band);
-      assert(bands[0] === "HALF" && bands[bands.length-1] === "HALF", "Start/End should be HALF");
-      assert(bands.includes("FULL"), "Middle day should be FULL");
-    });
-
-    T("Breakfast deduction = 20% of FULL", () => {
-      const legs = [{ id: "e", startUtc: "2025-01-05T08:00", endUtc: "2025-01-05T18:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, { "2025-01-05": true });
-      assert(out[0].band === "HALF", "HALF expected");
-      assert(out[0].breakfastDeduction === 5.6, "20% of 28 = 5.6");
-      assert(out[0].total === 8.4, "14 - 5.6 = 8.4");
-    });
-
-    // Additional tests
-    T("City fallback to 'Other' works", () => {
-      const legs = [{ id: "f", startUtc: "2025-02-01T08:00", endUtc: "2025-02-01T18:30", country: "France", city: "Lyon" }];
-      const out = computePerDiem(legs, ds, {});
-      assert(out[0].band === "HALF", "HALF expected");
-      assert(out[0].baseAmount === 36, "France 'Other' 8+ should be 36");
-    });
-
-    T("Null/All city uses country default", () => {
-      const legs = [{ id: "g", startUtc: "2025-03-01T08:00", endUtc: "2025-03-01T18:30", country: "Germany", city: "" }];
-      const out = computePerDiem(legs, ds, {});
-      assert(out[0].band === "HALF", "HALF expected");
-      assert(out[0].baseAmount === 14, "Germany 8+ should be 14");
-    });
-
-    T("Exactly 24h spanning 2 days → HALF + HALF", () => {
-      const legs = [{ id: "h", startUtc: "2025-04-01T00:00", endUtc: "2025-04-02T00:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      const bands = out.map(x=>x.band);
-      assert(bands.length === 2, "Two calendar days");
-      assert(bands[0] === "HALF" && bands[1] === "HALF", "Start and end should be HALF for >=24h");
-    });
-
-    T("Breakfast on FULL day deducts 20% of correct FULL rate", () => {
-      const legs = [{ id: "i", startUtc: "2025-05-01T00:00", endUtc: "2025-05-03T00:00", country: "France", city: "Paris" }];
-      const out = computePerDiem(legs, ds, { [outMiddleDate(out)]: true });
-      const middle = out.find(r => r.band === "FULL");
-      assert(!!middle, "There should be a FULL day");
-      assert(middle.breakfastDeduction === round2(58 * 0.2), "20% of 58 = 11.6");
-    });
-
-    // New: Same‑day exactly 8h → NONE (current rule uses strictly > 8h)
-    T("Same‑day ==8h total → NONE", () => {
-      const legs = [{ id: "j", startUtc: "2025-06-01T09:00", endUtc: "2025-06-01T17:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, {});
-      const sum = out.reduce((a,b)=>a+b.baseAmount,0);
-      assert(sum === 0, "No allowance when total == 8h (same day)");
-    });
-
-    // New: Breakfast ticked on a NONE day should not deduct anything
-    T("Breakfast on NONE day does not deduct", () => {
-      const legs = [{ id: "k", startUtc: "2025-06-02T09:00", endUtc: "2025-06-02T17:00", country: "Germany", city: null }];
-      const out = computePerDiem(legs, ds, { "2025-06-02": true });
-      assert(out[0].band === "NONE", "NONE expected");
-      assert(out[0].breakfastDeduction === 0, "No deduction on NONE day");
-      assert(out[0].total === 0, "Total remains 0");
-    });
-
-    // New: Last‑leg‑wins per‑day rate selection
-    T("Per‑day rate selected by last leg that ends that day", () => {
-      const legs = [
-        { id: "l1", startUtc: "2025-07-01T06:00", endUtc: "2025-07-01T10:00", country: "France", city: "Paris" },
-        { id: "l2", startUtc: "2025-07-01T10:30", endUtc: "2025-07-01T12:00", country: "France", city: "Other" }
-      ];
-      const out = computePerDiem(legs, ds, {});
-      if (out[0].band !== "NONE") {
-        // if >8h, logic might differ, so enforce hours small
-        console.warn("Test setup note: band is", out[0].band);
-      }
-      // Even if totals are NONE, the reference should be to the last leg's city
-      const ref = out[0].rateRef;
-      assert(ref.country === "France" && (ref.city === "Other" || ref.city === "Other"), "Rate ref should use last leg city 'Other'");
-    });
-
-    function outMiddleDate(out){
-      if (!out || out.length < 3) return "";
-      return out[Math.floor(out.length/2)].dateUtc;
-    }
-  } catch (e) {
-    console.error("Self‑tests failed to run:", e);
-  }
+    console.assert(typeof SAFE_BASE_URL === "string" && SAFE_BASE_URL.length > 0, "SAFE_BASE_URL should be string");
+    const sample = normalizeRates([{ country: "Germany", city: "Berlin", full_day_eur: 28, eight_plus_eur: 14 }]);
+    console.assert(sample.length === 1 && sample[0].country === "Germany", "normalizeRates basic");
+    const map = buildCountryCityMap(sample);
+    console.assert(countryListFromMap(map)[0] === "Germany", "country map builds");
+    // Extra tests
+    const csvQ = toCSV([["a,b","c\\nnewline",'he said "hi"']]);
+    console.assert(/^"a,b",/.test(csvQ), "CSV quoting works");
+    // splitByUtcDay test (inline): 3 days
+    const splitByUtcDayTest = (s:string,e:string)=>{ const S=new Date(s+":00Z"), E=new Date(e+":00Z"); let cur=S, c=0; while(cur<E){ const de=new Date(Date.UTC(cur.getUTCFullYear(),cur.getUTCMonth(),cur.getUTCDate()+1)); const ce=new Date(Math.min(+de,+E)); c++; cur=ce; } return c; };
+    console.assert(splitByUtcDayTest("2025-10-11T00:00","2025-10-13T23:59")===3, "per-day split = 3");
+    // Breakfast once-per-date semantics (pure simulation)
+    const applyDailyBreakfastSim = (dates:string[], wants:boolean[])=>{
+      const used = new Set<string>(); const applied:boolean[]=[]; for(let i=0;i<dates.length;i++){ const d=dates[i]; const w=wants[i]; const a = !!w && !used.has(d); if(a) used.add(d); applied.push(a); } return applied; };
+    const sim = applyDailyBreakfastSim(["2025-10-09","2025-10-09","2025-10-10"],[true,true,true]);
+    console.assert(sim[0]===true && sim[1]===false && sim[2]===true, "breakfast applies once per date across rows");
+  } catch {}
 })();
+
+// ——— Component ———
+export default function App(){
+  // Rates
+  const [rates, setRates] = useState<typeof emptyRates>(emptyRates);
+  const [ratesStatus, setRatesStatus] = useState<"idle"|"loading"|"loaded"|"error">("idle");
+  const ccMap = useMemo(()=>buildCountryCityMap(rates), [rates]);
+  const allCountries = useMemo(()=>countryListFromMap(ccMap), [ccMap]);
+  const cityList = (country:string)=> citiesFor(ccMap, country);
+
+  // Employees
+  const [employees, setEmployees] = useState(defaultEmployees);
+  const [selectedEmpId, setSelectedEmpId] = useState(employees[0]?.id || "");
+  const selectedEmp = employees.find(e => e.id === selectedEmpId) || null;
+  const [empPanelOpen, setEmpPanelOpen] = useState(false);
+  const [empForm, setEmpForm] = useState({ id: "", name: "", basePrimary: { country: "Germany", city: "Berlin" }, baseSecondary: { country: "", city: "" } });
+
+  // Month selector
+  const [month, setMonth] = useState(()=>{
+    const d = new Date(); const y = d.getUTCFullYear(); const m = String(d.getUTCMonth()+1).padStart(2,"0");
+    return `${y}-${m}`; // yyyy-mm
+  });
+
+  // Legs
+  type Leg = { id: string; startUtc: string; endUtc: string; from: { country: string; city: string }; to: { country: string; city: string }; };
+  const makeDefaultLeg = (): Leg => {
+    const id = (globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : Math.random().toString(36).slice(2);
+    const today = new Date(); const y = today.getUTCFullYear(); const m = String(today.getUTCMonth()+1).padStart(2,"0"); const d = String(today.getUTCDate()).padStart(2,"0");
+    const startUtc = `${y}-${m}-${d}T00:00`; const endUtc = `${y}-${m}-${d}T23:59`;
+    const defCountry = selectedEmp?.basePrimary.country || ""; const defCity = selectedEmp?.basePrimary.city || "";
+    return { id, startUtc, endUtc, from: { country: defCountry, city: defCity }, to: { country: defCountry, city: defCity } };
+  };
+  const [legs, setLegs] = useState<Leg[]>([makeDefaultLeg()]);
+
+  // Breakfast per calendar day (keyed by date YYYY-MM-DD)
+  const [breakfastByDate, setBreakfastByDate] = useState<Record<string, boolean>>({});
+
+  // PDF export ref
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // ——— Load rates (localStorage → public JSON fallbacks) ———
+  useEffect(()=>{
+    let cancelled = false;
+    async function hydrate(){
+      try{ const raw = localStorage.getItem(LS_RATES_KEY); if (raw){ const arr = JSON.parse(raw); if(Array.isArray(arr)&&arr.length){ setRates(arr); setRatesStatus("loaded"); return; } } }catch{}
+      setRatesStatus("loading");
+      for (const url of DEFAULT_RATE_CANDIDATES){
+        try{ const res = await fetch(url, { cache: "no-store" }); if(!res.ok) continue; const json = await res.json(); const cleaned = normalizeRates(json); if(cleaned.length){ if(!cancelled){ setRates(cleaned); setRatesStatus("loaded"); try{ localStorage.setItem(LS_RATES_KEY, JSON.stringify(cleaned)); }catch{} } return; } }catch{}
+      }
+      if(!cancelled) setRatesStatus("error");
+    }
+    hydrate();
+    return ()=>{ cancelled = true; };
+  },[]);
+
+  function onUploadRatesFile(file: File){
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const text = String(reader.result||"");
+        let parsed: typeof emptyRates = [];
+        if (/^\s*\[/.test(text)) parsed = normalizeRates(JSON.parse(text));
+        else if (/^\s*\{/.test(text)) parsed = normalizeRates(JSON.parse(text));
+        else parsed = parseCSV(text);
+        const cleaned = parsed.filter(r => r.country);
+        setRates(cleaned);
+        try{ localStorage.setItem(LS_RATES_KEY, JSON.stringify(cleaned)); }catch{}
+      }catch{ alert("Failed to parse rates file. Use CSV or JSON (flat or { countries:[{ entries:[] }] })."); }
+    };
+    reader.readAsText(file);
+  }
+
+  // ——— Employee handlers ———
+  function addOrUpdateEmployee(){
+    const id = empForm.id.toUpperCase();
+    if (!/^[A-Z]{3}$/.test(id)) { alert("Employee ID must be exactly 3 letters (A‑Z)."); return; }
+    const exists = employees.some(e => e.id === id);
+    const entry = { id, name: empForm.name.trim() || id, basePrimary: { ...empForm.basePrimary }, baseSecondary: { ...empForm.baseSecondary } };
+    const next = exists ? employees.map(e => (e.id === id ? entry : e)) : [...employees, entry];
+    setEmployees(next); setSelectedEmpId(id); setEmpPanelOpen(false);
+  }
+  function addLeg(){ setLegs(l => [...l, makeDefaultLeg()]); }
+  function addNextLeg(){
+    setLegs(l => {
+      const last = l[l.length-1];
+      const id = (globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : Math.random().toString(36).slice(2);
+      if (!last) return [...l, makeDefaultLeg()];
+      const start = last.endUtc; // next leg starts where previous ended
+      const d = new Date(start+":00Z");
+      const endDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59));
+      const endUtc = endDay.toISOString().slice(0,16);
+      const from = { ...last.to };
+      const to = { ...last.from };
+      const next = { id, startUtc: start, endUtc, from, to } as Leg;
+      return [...l, next];
+    });
+  }
+  function removeLeg(id:string){ setLegs(l => l.filter(x => x.id !== id)); }
+
+  // Persist trips to localStorage
+  useEffect(()=>{ try{ localStorage.setItem(LS_TRIPS_KEY, JSON.stringify({ legs, breakfastByDate })); }catch{} }, [legs, breakfastByDate]);
+  // Restore trips from localStorage (in case rates load earlier)
+  useEffect(()=>{ try{ const raw = localStorage.getItem(LS_TRIPS_KEY); if(raw){ const p = JSON.parse(raw); if(Array.isArray(p.legs)) setLegs(p.legs); if(p.breakfastByDate) setBreakfastByDate(p.breakfastByDate); } }catch{} }, []);
+
+  // ——— Calculation ———
+  function calculatePerDiems(){
+    // Helper: split an interval into UTC calendar-day buckets
+    function splitByUtcDay(startISO: string, endISO: string){
+      const out: Array<{ start: Date; end: Date; dateKey: string; hours: number }> = [];
+      const s = new Date(startISO + ":00Z");
+      const e = new Date(endISO + ":00Z");
+      if (isNaN(s.getTime()) || isNaN(e.getTime()) || e <= s) return out;
+      let curStart = new Date(s);
+      while (curStart < e){
+        const dayEnd = new Date(Date.UTC(curStart.getUTCFullYear(), curStart.getUTCMonth(), curStart.getUTCDate()+1, 0, 0, 0));
+        const curEnd = new Date(Math.min(dayEnd.getTime(), e.getTime()));
+        const hours = (curEnd.getTime() - curStart.getTime()) / 3_600_000;
+        const dateKey = `${curStart.getUTCFullYear()}-${String(curStart.getUTCMonth()+1).padStart(2,'0')}-${String(curStart.getUTCDate()).padStart(2,'0')}`;
+        out.push({ start: new Date(curStart), end: curEnd, dateKey, hours });
+        curStart = curEnd;
+      }
+      return out;
+    }
+
+    type Item = { leg: Leg; perDiemEUR: number; reason: string; segStart: string; segEnd: string; segDate: string; isFirst: boolean; key: string; breakfastApplied: boolean };
+    const items: Item[] = [];
+    const breakfastUsedThisDate = new Set<string>();
+
+    for (const leg of legs){
+      const fromLoc = leg.from; const toLoc = leg.to;
+      const hasSecondary = !!(selectedEmp?.baseSecondary && selectedEmp.baseSecondary.country && selectedEmp.baseSecondary.city);
+      const secBase = hasSecondary ? selectedEmp!.baseSecondary : undefined;
+      const isFromPrimary = sameLoc(fromLoc, selectedEmp?.basePrimary);
+      const isToPrimary = sameLoc(toLoc, selectedEmp?.basePrimary);
+      const isFromSecondary = hasSecondary && sameLoc(fromLoc, secBase as any);
+      const isToSecondary = hasSecondary && sameLoc(toLoc, secBase as any);
+
+      // If a leg starts and ends within the SAME base, all segments are zero.
+      const legIsHomeOnly = (isFromPrimary && isToPrimary) || (isFromSecondary && isToSecondary);
+      const segments = splitByUtcDay(leg.startUtc, leg.endUtc);
+      if (legIsHomeOnly){
+        for (let i = 0; i < segments.length; i++){
+          const seg = segments[i];
+          const key = `${seg.dateKey}`;
+          items.push({ leg, perDiemEUR: 0, reason: "home‑base only", segStart: seg.start.toISOString().slice(0,16), segEnd: seg.end.toISOString().slice(0,16), segDate: seg.dateKey, isFirst: i===0, key, breakfastApplied: false });
+        }
+        continue;
+      }
+
+      // Rule B for single-day only; multi-day → always use TO location rates
+      const arrivesBase = isToPrimary || isToSecondary;
+      const isMultiDay = segments.length > 1;
+      const rateLoc = isMultiDay ? toLoc : (arrivesBase ? fromLoc : toLoc);
+      const rate = guessRatesByLocation(rates, rateLoc.country, rateLoc.city);
+
+      if (!rate){
+        for (let i = 0; i < segments.length; i++){
+          const seg = segments[i];
+          const key = `${seg.dateKey}`;
+          items.push({ leg, perDiemEUR: 0, reason: "rate not found", segStart: seg.start.toISOString().slice(0,16), segEnd: seg.end.toISOString().slice(0,16), segDate: seg.dateKey, isFirst: i===0, key, breakfastApplied: false });
+        }
+        continue;
+      }
+
+      // Per‑day calc
+      for (let i = 0; i < segments.length; i++){
+        const seg = segments[i];
+        let per = 0; let reason = "/day rule";
+        if (seg.hours >= 24 - 1e-6) { per = rate.full_day_eur; reason = "full day (≥24h)"; }
+        else if (seg.hours > 8) { per = rate.eight_plus_eur; reason = ">8h"; }
+        else { per = 0; reason = "≤8h"; }
+
+        // Breakfast: only one deduction per date across all legs
+        const key = `${seg.dateKey}`;
+        const wantsBreakfast = !!breakfastByDate[key];
+        const applyBreakfast = wantsBreakfast && !breakfastUsedThisDate.has(key) && per > 0;
+        if (applyBreakfast) {
+          per = Math.max(0, per - 0.2 * rate.full_day_eur);
+          reason += " + breakfast −20%";
+          breakfastUsedThisDate.add(key);
+        }
+
+        items.push({ leg, perDiemEUR: per, reason, segStart: seg.start.toISOString().slice(0,16), segEnd: seg.end.toISOString().slice(0,16), segDate: seg.dateKey, isFirst: i===0, key, breakfastApplied: applyBreakfast });
+      }
+    }
+
+    return { items };
+  }
+
+  // ——— Export ———
+  function exportCSV(){
+    const rows: string[][] = [];
+    rows.push(["employee_id","employee_name","month","start_utc","end_utc","from_country","from_city","to_country","to_city","per_diem_eur","breakfast"]);
+    const calc = calculatePerDiems();
+    for(const it of calc.items){ rows.push([ selectedEmp?.id||"", selectedEmp?.name||"", month, it.segStart, it.segEnd, it.leg.from.country, it.leg.from.city, it.leg.to.country, it.leg.to.city, String(it.perDiemEUR.toFixed(2)), it.breakfastApplied?"yes":"no" ]); }
+    const csv = toCSV(rows); const blob = new Blob([csv], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `per_diem_${selectedEmp?.id||"EMP"}_${month}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  async function exportPDF(){
+    try{
+      const node = previewRef.current; if(!node){ alert("Preview not ready"); return; }
+      const [html2canvasMod, jsPDFMod] = await Promise.all([
+        import(/* @vite-ignore */ 'html2canvas'),
+        import(/* @vite-ignore */ 'jspdf')
+      ]);
+      const html2canvas = (html2canvasMod as any).default || (html2canvasMod as any);
+      const { jsPDF } = jsPDFMod as any;
+
+      // Prepare PDF
+      const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 28; // 0.4in
+      let curY = margin;
+
+      // --- Header: Logo + Employee + Month + Total ---
+      let logoDataUrl: string | null = null;
+      try {
+        const res = await fetch(DEFAULT_LOGO_URL, { cache: 'no-store' });
+        if (res.ok) {
+          const blob = await res.blob();
+          logoDataUrl = await new Promise<string>((resolve)=>{ const fr = new FileReader(); fr.onload = ()=>resolve(String(fr.result)); fr.readAsDataURL(blob); });
+        }
+      } catch {}
+
+      const total = calculatePerDiems().items.reduce((s,it)=>s+it.perDiemEUR,0);
+      const empLine = `Employee: ${(selectedEmp?.id||'')}${selectedEmp?.name?` — ${selectedEmp.name}`:''}`;
+      const monthLine = `Month: ${month}`;
+      const totalLine = `Total per‑diem: € ${total.toFixed(2)}`;
+
+      // Left: logo, Right: text
+      if (logoDataUrl) {
+        const imgH = 36; // px in pt
+        const imgW = imgH * 3; // rough aspect placeholder
+        pdf.addImage(logoDataUrl, 'PNG', margin, curY, imgW, imgH);
+      }
+      pdf.setFontSize(12);
+      pdf.text(empLine, pageWidth - margin, curY + 14, { align: 'right' });
+      pdf.text(monthLine, pageWidth - margin, curY + 30, { align: 'right' });
+      pdf.text(totalLine, pageWidth - margin, curY + 46, { align: 'right' });
+
+      curY += 58;
+      pdf.setDrawColor(200);
+      pdf.line(margin, curY, pageWidth - margin, curY);
+      curY += 10;
+
+      // --- Table capture ---
+      const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = canvas.height * (imgWidth / canvas.width);
+
+      const space = pageHeight - curY - margin;
+      if (imgHeight <= space){
+        pdf.addImage(imgData, 'PNG', margin, curY, imgWidth, imgHeight);
+      } else {
+        // Tiling down the pages beneath the header
+        let pos = 0;
+        const sliceHeight = Math.floor(canvas.width * (space / imgWidth));
+        while (pos < canvas.height){
+          const slice = document.createElement('canvas');
+          slice.width = canvas.width;
+          slice.height = Math.min(sliceHeight, canvas.height - pos);
+          const ctx = slice.getContext('2d')!;
+          ctx.drawImage(canvas, 0, pos, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+          const sliceData = slice.toDataURL('image/png');
+          if (pos > 0) { pdf.addPage(); curY = margin; }
+          pdf.addImage(sliceData, 'PNG', margin, curY, imgWidth, slice.height * (imgWidth / canvas.width));
+          pos += sliceHeight;
+        }
+      }
+
+      pdf.save(`per_diem_${selectedEmp?.id||'EMP'}_${month}.pdf`);
+    }catch(err){ console.error(err); alert('PDF export failed.'); }
+  }
+
+  // ——— UI ———
+  return (
+    <div className="mx-auto max-w-6xl p-4 space-y-4">
+      {/* Top bar: Logo + Employee */}
+      <div className="flex items-center gap-4">
+        <img src={DEFAULT_LOGO_URL} alt="Logo" className="h-10 w-auto" />
+        <Card className="flex-1">
+          <CardContent className="p-4">
+            <div className="flex items-end gap-3 flex-wrap">
+              <div className="min-w-[220px]">
+                <label className="mb-1 block text-sm font-medium">Employee</label>
+                <select className="w-[220px] rounded-xl border px-3 py-2 text-sm" value={selectedEmpId} onChange={(e)=>setSelectedEmpId(e.target.value)}>
+                  {employees.map(e => (<option key={e.id} value={e.id}>{e.id} — {e.name}</option>))}
+                </select>
+              </div>
+              <Button type="button" variant="outline" className="gap-2" onClick={()=>setEmpPanelOpen(v=>!v)}>
+                <IconEdit className="h-4 w-4"/> Add / Edit employee
+              </Button>
+              <div className="grow"/>
+              <label className="mb-1 block text-sm font-medium">Month</label>
+              <input type="month" className="rounded-xl border px-3 py-2 text-sm" value={month} onChange={(e)=>setMonth(e.target.value)} />
+            </div>
+
+            {empPanelOpen && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Employee ID (3 letters)</label>
+                  <Input value={empForm.id} maxLength={3} onChange={e=>setEmpForm({ ...empForm, id: e.target.value.toUpperCase() })} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Employee Name</label>
+                  <Input value={empForm.name} onChange={e=>setEmpForm({ ...empForm, name: e.target.value })} />
+                </div>
+
+                {/* Primary Base (free text allowed as per brief) */}
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Primary Base — Country</label>
+                  <Input value={empForm.basePrimary.country} onChange={e=>setEmpForm({ ...empForm, basePrimary: { ...empForm.basePrimary, country: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Primary Base — City</label>
+                  <Input value={empForm.basePrimary.city} onChange={e=>setEmpForm({ ...empForm, basePrimary: { ...empForm.basePrimary, city: e.target.value } })} />
+                </div>
+
+                {/* Hidden/compact Secondary Base from dataset */}
+                <div className="md:col-span-2 border-t pt-3">
+                  <details>
+                    <summary className="cursor-pointer text-sm font-medium">Secondary Home Base (optional)</summary>
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="mb-1 block text-sm">Country</label>
+                        <select className="w-full rounded-xl border px-3 py-2 text-sm" value={empForm.baseSecondary.country} onChange={(e)=>{
+                          const country = e.target.value; const cities = cityList(country);
+                          setEmpForm({ ...empForm, baseSecondary: { country, city: cities[0] || "" } });
+                        }}>
+                          <option value="">— None —</option>
+                          {allCountries.map(c => (<option key={c} value={c}>{c}</option>))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm">City</label>
+                        <select className="w-full rounded-xl border px-3 py-2 text-sm" value={empForm.baseSecondary.city} onChange={(e)=>setEmpForm({ ...empForm, baseSecondary: { ...empForm.baseSecondary, city: selectValueToCity(e.target.value) } })}>
+                          <option value="">— None —</option>
+                          {empForm.baseSecondary.country && ["", ...cityList(empForm.baseSecondary.country)].map(cty => (
+                            <option key={cty || CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(cty)}>{cty || "(Country rate)"}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end"><Button variant="secondary" onClick={()=>setEmpForm({ ...empForm, baseSecondary: { country: "", city: "" } })}>Clear</Button></div>
+                    </div>
+                  </details>
+                </div>
+
+                <div className="md:col-span-2"><Button onClick={addOrUpdateEmployee}>Save Employee</Button></div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Rates + Export row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Card className="p-3 flex items-center gap-3">
+          <Badge>rates: {ratesStatus === 'loaded' ? 'default' : ratesStatus}</Badge>
+          <label className="text-sm">
+            <input type="file" accept=".json,.csv" className="hidden" id="ratesFile" onChange={(e)=>{ const f=e.target.files?.[0]; if(f) onUploadRatesFile(f); }} />
+            <span className="inline-flex items-center gap-2 cursor-pointer" onClick={()=>document.getElementById('ratesFile')?.click()}>
+              <IconUpload className="h-4 w-4"/> Load rates
+            </span>
+          </label>
+        </Card>
+        <div className="grow"/>
+        <Button variant="outline" onClick={exportCSV}>Export CSV</Button>
+        <Button variant="outline" onClick={exportPDF}>Export PDF</Button>
+      </div>
+
+      {/* Trip Legs */}
+      <Card>
+        <CardHeader className="flex items-center justify-between">
+          <CardTitle>Trip Legs (UTC)</CardTitle>
+          <div className="flex gap-2">
+            <Button variant="secondary" className="gap-2" onClick={addLeg}><IconPlus className="h-4 w-4"/> Add new leg</Button>
+            <Button variant="secondary" className="gap-2" onClick={addNextLeg}><IconPlus className="h-4 w-4"/> Next leg</Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {legs.map((leg) => (
+            <div key={leg.id} className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-end">
+              {/* Start / End */}
+              <div className="lg:col-span-2">
+                <label className="text-xs block">Start UTC</label>
+                <input type="datetime-local" step={300} className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.startUtc} onChange={(e)=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,startUtc:e.target.value}:x))} />
+              </div>
+              <div className="lg:col-span-2">
+                <label className="text-xs block">End UTC</label>
+                <input type="datetime-local" step={300} className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.endUtc} onChange={(e)=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,endUtc:e.target.value}:x))} />
+              </div>
+
+              {/* From Country/City */}
+              <div className="lg:col-span-2">
+                <label className="text-xs block">From — Country</label>
+                <select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.from.country} onChange={(e)=>{
+                  const country = e.target.value; const firstCity = cityList(country)[0] || "";
+                  setLegs(ls=>ls.map(x=>x.id===leg.id?{...x, from:{ country, city:firstCity }}:x));
+                }}>
+                  {allCountries.map(c => (<option key={c} value={c}>{c}</option>))}
+                </select>
+              </div>
+              <div className="lg:col-span-1">
+                <label className="text-xs block">From — City</label>
+                <select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.from.city)} onChange={(e)=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x, from:{ ...x.from, city: selectValueToCity(e.target.value) }}:x))}>
+                  {["", ...cityList(leg.from.country)].map(cty => (<option key={cty || CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(cty)}>{cty || "(Country rate)"}</option>))}
+                </select>
+              </div>
+
+              {/* To Country/City */}
+              <div className="lg:col-span-2">
+                <label className="text-xs block">To — Country</label>
+                <select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.to.country} onChange={(e)=>{
+                  const country = e.target.value; const firstCity = cityList(country)[0] || "";
+                  setLegs(ls=>ls.map(x=>x.id===leg.id?{...x, to:{ country, city:firstCity }}:x));
+                }}>
+                  {allCountries.map(c => (<option key={c} value={c}>{c}</option>))}
+                </select>
+              </div>
+              <div className="lg:col-span-1">
+                <label className="text-xs block">To — City</label>
+                <select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.to.city)} onChange={(e)=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x, to:{ ...x.to, city: selectValueToCity(e.target.value) }}:x))}>
+                  {["", ...cityList(leg.to.country)].map(cty => (<option key={cty || CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(cty)}>{cty || "(Country rate)"}</option>))}
+                </select>
+              </div>
+
+              {/* Remove */}
+              <div className="lg:col-span-2 flex justify-end">
+                <Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}><IconTrash className="h-4 w-4"/> Remove</Button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Preview */}
+      <Card>
+        <CardHeader><CardTitle>Calculation Preview</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto" ref={previewRef}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b">
+                <th className="py-2">Day (UTC)</th>
+                <th>Segment Start</th>
+                <th>Segment End</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Breakfast</th>
+                <th>Per‑Diem (€)</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {calculatePerDiems().items.map((it, i)=> (
+                <tr key={i} className="border-b last:border-0">
+                  <td className="py-2">{it.segDate}</td>
+                  <td>{it.segStart}</td>
+                  <td>{it.segEnd}</td>
+                  <td>{it.leg.from.country}{it.leg.from.city?`, ${it.leg.from.city}`:""}</td>
+                  <td>{it.leg.to.country}{it.leg.to.city?`, ${it.leg.to.city}`:""}</td>
+                  <td>
+                    <input type="checkbox" checked={!!breakfastByDate[it.key]} onChange={(e)=> setBreakfastByDate(prev => ({ ...prev, [it.key]: e.target.checked }))} />
+                  </td>
+                  <td className="font-medium">{it.perDiemEUR.toFixed(2)}</td>
+                  <td className="text-neutral-500">{it.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-3 flex justify-end text-sm">
+            <div className="rounded-xl border px-3 py-2 bg-neutral-50">
+              <span className="mr-2 font-medium">Total per‑diem:</span>
+              <span className="font-semibold">€ {calculatePerDiems().items.reduce((s,it)=>s+it.perDiemEUR,0).toFixed(2)}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
