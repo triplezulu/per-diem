@@ -75,12 +75,9 @@ const defaultEmployees: Employee[] = [
 
 const CITY_COUNTRY_ONLY_SENTINEL = "__country_only__";
 const LS_RATES_KEY = "perdiem_rates_v1";
-const LS_RATES_YEAR_KEY = "perdiem_rates_year_v1";
 const LS_TRIPS_KEY = "perdiem_trips_v2";
 const LS_EMPLOYEES_KEY = "perdiem_employees_v1";
 const LS_FL3XX_SETTINGS_KEY = "perdiem_fl3xx_settings_v1";
-const LS_FL3XX_ARCHIVE_KEY = "perdiem_fl3xx_archive_v1";
-const LS_FL3XX_HIDDEN_KEY = "perdiem_fl3xx_hidden_v1";
 const DEFAULT_FL3XX_PROXY_URL = "https://fl3xx-perdiem-proxy.triplezulu.workers.dev/";
 
 const SAFE_BASE_URL: string = (() => {
@@ -91,7 +88,7 @@ const SAFE_BASE_URL: string = (() => {
   } catch { return "/"; }
 })();
 const DEFAULT_LOGO_URL = SAFE_BASE_URL + "logo.png";
-const rateCandidatesForYear=(year:number)=>[SAFE_BASE_URL + `per_diem_${year}.json`, `/per_diem_${year}.json`];
+const DEFAULT_RATE_CANDIDATES = [SAFE_BASE_URL + "per_diem_2025.json", "/per_diem_2025.json"];
 
 function normalizeRates(jsonData: any): Rate[] {
   if (Array.isArray(jsonData)) {
@@ -162,17 +159,6 @@ const cityToSelectValue=(city:string)=>city && city.trim()!=="" ? city : CITY_CO
 const selectValueToCity=(v:string)=>v===CITY_COUNTRY_ONLY_SENTINEL?"":v;
 const sameLoc=(a?:Location,b?:Location)=>!!a&&!!b&&(a.country||"")===(b.country||"")&&(a.city||"")===(b.city||"");
 const locLabel=(l:Location)=>`${l.country}${l.city ? ", "+l.city : ""}`;
-const COUNTRY_ISO2:Record<string,string>={"Afghanistan":"AF","Albania":"AL","Algeria":"DZ","American Samoa":"AS","Andorra":"AD","Angola":"AO","Anguilla":"AI","Antarctica":"AQ","Antigua and Barbuda":"AG","Arab Republic of Egypt":"EG","Argentina":"AR","Argentine Republic":"AR","Armenia":"AM","Aruba":"AW","Australia":"AU","Austria":"AT","Azerbaijan":"AZ","Bahamas":"BS","Bahrain":"BH","Bangladesh":"BD","Barbados":"BB","Belarus":"BY","Belgium":"BE","Belize":"BZ","Benin":"BJ","Bermuda":"BM","Bhutan":"BT","Bolivarian Republic of Venezuela":"VE","Bolivia":"BO","Bolivia, Plurinational State of":"BO","Bonaire, Sint Eustatius and Saba":"BQ","Bosnia and Herzegovina":"BA","Botswana":"BW","Bouvet Island":"BV","Brazil":"BR","British Indian Ocean Territory":"IO","British Virgin Islands":"VG","Brunei":"BN","Brunei Darussalam":"BN","Bulgaria":"BG","Burkina Faso":"BF","Burundi":"BI","Cabo Verde":"CV","Cambodia":"KH","Cameroon":"CM","Canada":"CA","Cape Verde":"CV","Cayman Islands":"KY","Central African Republic":"CF","Chad":"TD","Chile":"CL","China":"CN","Christmas Island":"CX","Cocos (Keeling) Islands":"CC","Colombia":"CO","Commonwealth of Dominica":"DM","Commonwealth of the Bahamas":"BS","Commonwealth of the Northern Mariana Islands":"MP","Comoros":"KM","Congo":"CG","Congo, Democratic Republic of":"CD","Congo, Republic of":"CG","Congo, The Democratic Republic of the":"CD","Cook Islands":"CK","Costa Rica":"CR","Croatia":"HR","Cuba":"CU","Curaçao":"CW","Cyprus":"CY","Czech Republic":"CZ","Czechia":"CZ","Côte d'Ivoire":"CI","Côte d’Ivoire":"CI","Democratic People's Republic of Korea":"KP","Democratic Republic of Sao Tome and Principe":"ST","Democratic Republic of Timor-Leste":"TL","Democratic Socialist Republic of Sri Lanka":"LK","Denmark":"DK","Djibouti":"DJ","Dominica":"DM","Dominican Republic":"DO","Eastern Republic of Uruguay":"UY","Ecuador":"EC","Egypt":"EG","El Salvador":"SV","Equatorial Guinea":"GQ","Eritrea":"ER","Estonia":"EE","Eswatini":"SZ","Ethiopia":"ET","Falkland Islands (Malvinas)":"FK","Faroe Islands":"FO","Federal Democratic Republic of Ethiopia":"ET","Federal Democratic Republic of Nepal":"NP","Federal Republic of Germany":"DE","Federal Republic of Nigeria":"NG","Federal Republic of Somalia":"SO","Federated States of Micronesia":"FM","Federative Republic of Brazil":"BR","Fiji":"FJ","Finland":"FI","France":"FR","French Guiana":"GF","French Polynesia":"PF","French Republic":"FR","French Southern Territories":"TF","Gabon":"GA","Gabonese Republic":"GA","Gambia":"GM","Georgia":"GE","Germany":"DE","Ghana":"GH","Gibraltar":"GI","Grand Duchy of Luxembourg":"LU","Greece":"GR","Greenland":"GL","Grenada":"GD","Guadeloupe":"GP","Guam":"GU","Guatemala":"GT","Guernsey":"GG","Guinea":"GN","Guinea-Bissau":"GW","Guyana":"GY","Haiti":"HT","Hashemite Kingdom of Jordan":"JO","Heard Island and McDonald Islands":"HM","Hellenic Republic":"GR","Holy See (Vatican City State)":"VA","Honduras":"HN","Hong Kong":"HK","Hong Kong Special Administrative Region of China":"HK","Hungary":"HU","Iceland":"IS","Independent State of Papua New Guinea":"PG","Independent State of Samoa":"WS","India":"IN","Indonesia":"ID","Iran":"IR","Iran, Islamic Republic of":"IR","Iraq":"IQ","Ireland":"IE","Islamic Republic of Afghanistan":"AF","Islamic Republic of Iran":"IR","Islamic Republic of Mauritania":"MR","Islamic Republic of Pakistan":"PK","Isle of Man":"IM","Israel":"IL","Italian Republic":"IT","Italy":"IT","Jamaica":"JM","Japan":"JP","Jersey":"JE","Jordan":"JO","Kazakhstan":"KZ","Kenya":"KE","Kingdom of Bahrain":"BH","Kingdom of Belgium":"BE","Kingdom of Bhutan":"BT","Kingdom of Cambodia":"KH","Kingdom of Denmark":"DK","Kingdom of Eswatini":"SZ","Kingdom of Lesotho":"LS","Kingdom of Morocco":"MA","Kingdom of Norway":"NO","Kingdom of Saudi Arabia":"SA","Kingdom of Spain":"ES","Kingdom of Sweden":"SE","Kingdom of Thailand":"TH","Kingdom of Tonga":"TO","Kingdom of the Netherlands":"NL","Kiribati":"KI","Korea, Democratic People's Republic":"KP","Korea, Democratic People's Republic of":"KP","Korea, Republic of":"KR","Kuwait":"KW","Kyrgyz Republic":"KG","Kyrgyzstan":"KG","Lao People's Democratic Republic":"LA","Laos":"LA","Latvia":"LV","Lebanese Republic":"LB","Lebanon":"LB","Lesotho":"LS","Liberia":"LR","Libya":"LY","Liechtenstein":"LI","Lithuania":"LT","Luxembourg":"LU","Macao":"MO","Macao Special Administrative Region of China":"MO","Madagascar":"MG","Malawi":"MW","Malaysia":"MY","Maldives":"MV","Mali":"ML","Malta":"MT","Marshall Islands":"MH","Martinique":"MQ","Mauritania":"MR","Mauritius":"MU","Mayotte":"YT","Mexico":"MX","Micronesia, Federated States of":"FM","Moldova":"MD","Moldova, Republic of":"MD","Monaco":"MC","Mongolia":"MN","Montenegro":"ME","Montserrat":"MS","Morocco":"MA","Mozambique":"MZ","Myanmar":"MM","Namibia":"NA","Nauru":"NR","Nepal":"NP","Netherlands":"NL","New Caledonia":"NC","New Zealand":"NZ","Nicaragua":"NI","Niger":"NE","Nigeria":"NG","Niue":"NU","Norfolk Island":"NF","North Korea":"KP","North Macedonia":"MK","Northern Mariana Islands":"MP","Norway":"NO","Oman":"OM","Pakistan":"PK","Palau":"PW","Palestine, State of":"PS","Palestinian Territories":"PS","Panama":"PA","Papua New Guinea":"PG","Paraguay":"PY","People's Democratic Republic of Algeria":"DZ","People's Republic of Bangladesh":"BD","People's Republic of China":"CN","Peru":"PE","Philippines":"PH","Pitcairn":"PN","Plurinational State of Bolivia":"BO","Poland":"PL","Portugal":"PT","Portuguese Republic":"PT","Principality of Andorra":"AD","Principality of Liechtenstein":"LI","Principality of Monaco":"MC","Puerto Rico":"PR","Qatar":"QA","Republic of Albania":"AL","Republic of Angola":"AO","Republic of Armenia":"AM","Republic of Austria":"AT","Republic of Azerbaijan":"AZ","Republic of Belarus":"BY","Republic of Benin":"BJ","Republic of Bosnia and Herzegovina":"BA","Republic of Botswana":"BW","Republic of Bulgaria":"BG","Republic of Burundi":"BI","Republic of Cabo Verde":"CV","Republic of Cameroon":"CM","Republic of Chad":"TD","Republic of Chile":"CL","Republic of Colombia":"CO","Republic of Costa Rica":"CR","Republic of Croatia":"HR","Republic of Cuba":"CU","Republic of Cyprus":"CY","Republic of Côte d'Ivoire":"CI","Republic of Djibouti":"DJ","Republic of Ecuador":"EC","Republic of El Salvador":"SV","Republic of Equatorial Guinea":"GQ","Republic of Estonia":"EE","Republic of Fiji":"FJ","Republic of Finland":"FI","Republic of Ghana":"GH","Republic of Guatemala":"GT","Republic of Guinea":"GN","Republic of Guinea-Bissau":"GW","Republic of Guyana":"GY","Republic of Haiti":"HT","Republic of Honduras":"HN","Republic of Iceland":"IS","Republic of India":"IN","Republic of Indonesia":"ID","Republic of Iraq":"IQ","Republic of Kazakhstan":"KZ","Republic of Kenya":"KE","Republic of Kiribati":"KI","Republic of Latvia":"LV","Republic of Liberia":"LR","Republic of Lithuania":"LT","Republic of Madagascar":"MG","Republic of Malawi":"MW","Republic of Maldives":"MV","Republic of Mali":"ML","Republic of Malta":"MT","Republic of Mauritius":"MU","Republic of Moldova":"MD","Republic of Mozambique":"MZ","Republic of Myanmar":"MM","Republic of Namibia":"NA","Republic of Nauru":"NR","Republic of Nicaragua":"NI","Republic of North Macedonia":"MK","Republic of Palau":"PW","Republic of Panama":"PA","Republic of Paraguay":"PY","Republic of Peru":"PE","Republic of Poland":"PL","Republic of San Marino":"SM","Republic of Senegal":"SN","Republic of Serbia":"RS","Republic of Seychelles":"SC","Republic of Sierra Leone":"SL","Republic of Singapore":"SG","Republic of Slovenia":"SI","Republic of South Africa":"ZA","Republic of South Sudan":"SS","Republic of Suriname":"SR","Republic of Tajikistan":"TJ","Republic of Trinidad and Tobago":"TT","Republic of Tunisia":"TN","Republic of Türkiye":"TR","Republic of Uganda":"UG","Republic of Uzbekistan":"UZ","Republic of Vanuatu":"VU","Republic of Yemen":"YE","Republic of Zambia":"ZM","Republic of Zimbabwe":"ZW","Republic of the Congo":"CG","Republic of the Gambia":"GM","Republic of the Marshall Islands":"MH","Republic of the Niger":"NE","Republic of the Philippines":"PH","Republic of the Sudan":"SD","Romania":"RO","Russia":"RU","Russian Federation":"RU","Rwanda":"RW","Rwandese Republic":"RW","Réunion":"RE","Saint Barthélemy":"BL","Saint Helena, Ascension and Tristan da Cunha":"SH","Saint Kitts and Nevis":"KN","Saint Lucia":"LC","Saint Martin (French part)":"MF","Saint Pierre and Miquelon":"PM","Saint Vincent and the Grenadines":"VC","Samoa":"WS","San Marino":"SM","Sao Tome and Principe":"ST","Saudi Arabia":"SA","Senegal":"SN","Serbia":"RS","Seychelles":"SC","Sierra Leone":"SL","Singapore":"SG","Sint Maarten (Dutch part)":"SX","Slovak Republic":"SK","Slovakia":"SK","Slovenia":"SI","Socialist Republic of Viet Nam":"VN","Solomon Islands":"SB","Somalia":"SO","South Africa":"ZA","South Georgia and the South Sandwich Islands":"GS","South Korea":"KR","South Sudan":"SS","Spain":"ES","Sri Lanka":"LK","State of Israel":"IL","State of Kuwait":"KW","State of Qatar":"QA","Sudan":"SD","Sultanate of Oman":"OM","Suriname":"SR","Svalbard and Jan Mayen":"SJ","Sweden":"SE","Swiss Confederation":"CH","Switzerland":"CH","Syria":"SY","Syrian Arab Republic":"SY","São Tomé and Príncipe":"ST","Taiwan":"TW","Taiwan, Province of China":"TW","Tajikistan":"TJ","Tanzania":"TZ","Tanzania, United Republic of":"TZ","Thailand":"TH","Timor-Leste":"TL","Togo":"TG","Togolese Republic":"TG","Tokelau":"TK","Tonga":"TO","Trinidad and Tobago":"TT","Tunisia":"TN","Turkmenistan":"TM","Turks and Caicos Islands":"TC","Tuvalu":"TV","Türkiye":"TR","Uganda":"UG","Ukraine":"UA","Union of the Comoros":"KM","United Arab Emirates":"AE","United Kingdom":"GB","United Kingdom of Great Britain and Northern Ireland":"GB","United Mexican States":"MX","United Republic of Tanzania":"TZ","United States":"US","United States Minor Outlying Islands":"UM","United States of America":"US","Uruguay":"UY","Uzbekistan":"UZ","Vanuatu":"VU","Vatican City":"VA","Venezuela":"VE","Venezuela, Bolivarian Republic of":"VE","Viet Nam":"VN","Vietnam":"VN","Virgin Islands of the United States":"VI","Virgin Islands, British":"VG","Virgin Islands, U.S.":"VI","Wallis and Futuna":"WF","Western Sahara":"EH","Yemen":"YE","Zambia":"ZM","Zimbabwe":"ZW","the State of Eritrea":"ER","the State of Palestine":"PS","Åland Islands":"AX"};
-const countryCode=(country:string)=>COUNTRY_ISO2[country]||country.slice(0,2).toUpperCase();
-const compactLocLabel=(l:Location)=>{
-  const code=countryCode(l.country);
-  const city=(l.city||"").trim();
-  return city && city!=="Other" ? `${code} · ${city}` : code;
-};
-const compactReason=(it:DailyPerDiem)=>{
-  const base=it.dayType==="FULL"?"Full day":it.dayType==="HALF"?">8h":"≤8h";
-  return it.breakfastApplied ? `${base} · breakfast −20%` : base;
-};
 const isoDate=(d:Date)=>`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 const isoMinute=(d:Date)=>d.toISOString().slice(0,16);
 const hhmm=(iso:string)=>iso.slice(11,16);
@@ -190,56 +176,6 @@ function eventOverlapsDateRange(e:ParsedIcsEvent, fromDate:string, toDate:string
   const startMs=new Date(e.startUtc+":00Z").getTime();
   const endMs=new Date(e.endUtc+":00Z").getTime();
   return endMs>=fromMs && startMs<=toMs;
-}
-function shiftIsoDate(date:string,days:number){
-  const d=new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate()+days);
-  return isoDate(d);
-}
-function expandedContextRange(fromDate:string,toDate:string,days=7){
-  return {from:shiftIsoDate(fromDate,-days),to:shiftIsoDate(toDate,days)};
-}
-function legOverlapsDateRange(l:Leg, fromDate:string, toDate:string){
-  if(!l.startUtc || !l.endUtc) return false;
-  const fromMs=new Date(`${fromDate}T00:00:00Z`).getTime();
-  const toMs=new Date(`${toDate}T23:59:59Z`).getTime();
-  const startMs=new Date(l.startUtc+":00Z").getTime();
-  const endMs=new Date(l.endUtc+":00Z").getTime();
-  return endMs>=fromMs && startMs<=toMs;
-}
-function replaceImportedLegsForRange(existing:Leg[], imported:Leg[], fromDate:string, toDate:string){
-  const kept=existing.filter(l=>!(l.source==="ICS" && legOverlapsDateRange(l,fromDate,toDate)));
-  const seen=new Set(kept.map(legKey));
-  const merged=[...kept];
-  for(const leg of imported){
-    const key=legKey(leg);
-    if(!seen.has(key)){ seen.add(key); merged.push(leg); }
-  }
-  return merged.sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-}
-
-function combineManualWithArchive(existing:Leg[], archive:Leg[]){
-  const manual=existing.filter(l=>l.source!=="ICS" && !looksLikePlaceholderLeg(l));
-  const seen=new Set<string>();
-  const merged:Leg[]=[];
-  for(const leg of [...manual,...archive]){
-    const key=legKey(leg);
-    if(!seen.has(key)){ seen.add(key); merged.push(leg); }
-  }
-  if(!merged.length) return existing.length ? existing : [];
-  return merged.sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-}
-function eventFeedCoverage(events:ParsedIcsEvent[]){
-  const timed=events.filter(e=>e.startUtc && e.endUtc);
-  if(!timed.length) return null;
-  const starts=timed.map(e=>e.startUtc.slice(0,10)).sort();
-  const ends=timed.map(e=>e.endUtc.slice(0,10)).sort();
-  return {from:starts[0],to:ends[ends.length-1]};
-}
-function rangeIntersection(aFrom:string,aTo:string,bFrom:string,bTo:string){
-  const from=aFrom>bFrom?aFrom:bFrom;
-  const to=aTo<bTo?aTo:bTo;
-  return from<=to?{from,to}:null;
 }
 function movementTone(type?:MovementType){
   if(type==="FLIGHT") return {row:"border-l-4 border-l-sky-500 bg-sky-50/40",badge:"border-sky-200 bg-sky-100 text-sky-700"};
@@ -378,31 +314,6 @@ function homeBasesFor(emp: Employee | null): Location[] {
   return bases;
 }
 function isHome(loc:Location, homes:Location[]) { return homes.some(h=>sameLoc(loc,h)); }
-
-function summarizeTrips(legs:Leg[], homes:Location[]){
-  const sorted=[...legs]
-    .filter(l=>l.startUtc && l.endUtc)
-    .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-  let active=false;
-  let closed=0;
-  let open=0;
-  let lastClosedAt:Location|null=null;
-  for(const leg of sorted){
-    const fromHome=isHome(leg.from,homes);
-    const toHome=isHome(leg.to,homes);
-    if(!active){
-      if(fromHome && toHome) continue;
-      active=true;
-    }
-    if(active && toHome){
-      closed++;
-      lastClosedAt=leg.to;
-      active=false;
-    }
-  }
-  if(active) open=1;
-  return {closed,open,lastClosedAt};
-}
 
 function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfastByDate:Record<string,boolean>): {items:DailyPerDiem[]; warnings:string[]} {
   const sorted=[...legs]
@@ -553,25 +464,12 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     console.assert(DEFAULT_FL3XX_PROXY_URL.startsWith("https://") && DEFAULT_FL3XX_PROXY_URL.includes("workers.dev"),"default FL3XX proxy URL should be configured");
     console.assert(monthDateBounds("2028-02").to==="2028-02-29","month bounds should cover full leap February");
     console.assert(eventOverlapsDateRange({kind:"FLIGHT",summary:"",startUtc:"2026-08-31T23:00",endUtc:"2026-09-01T01:00",locationText:""},"2026-08-01","2026-08-31"),"date range should include overlapping events");
-    const ctx=expandedContextRange("2026-08-01","2026-08-31",7);
-    console.assert(ctx.from==="2026-07-25" && ctx.to==="2026-09-07","sync context should extend seven days around selected range");
-    const manualKeep:Leg={id:"m",startUtc:"2026-09-10T08:00",endUtc:"2026-09-10T09:00",from:homes[1],to:{country:"France",city:"Paris"},movementType:"MANUAL",source:"MANUAL"};
-    const oldIcs:Leg={id:"old",startUtc:"2026-09-10T10:00",endUtc:"2026-09-10T11:00",from:{country:"France",city:"Paris"},to:{country:"Italy",city:"Olbia"},movementType:"FLIGHT",source:"ICS"};
-    const outsideIcs:Leg={id:"outside",startUtc:"2026-10-02T10:00",endUtc:"2026-10-02T11:00",from:homes[1],to:{country:"France",city:"Paris"},movementType:"FLIGHT",source:"ICS"};
-    const freshIcs:Leg={id:"fresh",startUtc:"2026-09-10T12:00",endUtc:"2026-09-10T13:00",from:{country:"Italy",city:"Olbia"},to:homes[1],movementType:"FLIGHT",source:"ICS"};
-    const replaced=replaceImportedLegsForRange([manualKeep,oldIcs,outsideIcs],[freshIcs],"2026-09-01","2026-09-30");
-    console.assert(replaced.some(l=>l.id==="m"),"refresh should preserve manual legs");
-    console.assert(!replaced.some(l=>l.id==="old") && replaced.some(l=>l.id==="fresh"),"refresh should replace ICS legs inside selected range");
-    console.assert(replaced.some(l=>l.id==="outside"),"refresh should preserve ICS legs outside selected range");
-    const tripStats=summarizeTrips([manualKeep,freshIcs],homes);
-    console.assert(tripStats.closed===1 && tripStats.open===0,"trip summary should recognize a closed trip");
   } catch {}
 })();
 
 export default function App(){
   const [rates,setRates]=useState<Rate[]>(emptyRates);
   const [ratesStatus,setRatesStatus]=useState<"idle"|"loading"|"loaded"|"error">("idle");
-  const [ratesYear,setRatesYear]=useState<number|null>(2025);
   const ccMap=useMemo(()=>buildCountryCityMap(rates),[rates]);
   const allCountries=useMemo(()=>countryListFromMap(ccMap),[ccMap]);
   const cityList=(c:string)=>citiesFor(ccMap,c);
@@ -582,7 +480,6 @@ export default function App(){
   const [empPanelOpen,setEmpPanelOpen]=useState(false);
   const [empForm,setEmpForm]=useState<Employee>({id:"",name:"",basePrimary:{country:"Germany",city:"Berlin"},baseSecondary:{country:"Poland",city:"Warsaw"}});
   const [month,setMonth]=useState(()=>{const d=new Date();return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;});
-  const selectedYear=Number(month.slice(0,4));
   const initialImportRange=monthDateBounds(month);
   const [fl3xxFromDate,setFl3xxFromDate]=useState(initialImportRange.from);
   const [fl3xxToDate,setFl3xxToDate]=useState(initialImportRange.to);
@@ -602,11 +499,6 @@ export default function App(){
   const [fl3xxPassword,setFl3xxPassword]=useState("");
   const [fl3xxSyncing,setFl3xxSyncing]=useState(false);
   const [fl3xxPanelOpen,setFl3xxPanelOpen]=useState(false);
-  const [lastSyncAt,setLastSyncAt]=useState<string>("");
-  const [fl3xxArchive,setFl3xxArchive]=useState<Leg[]>([]);
-  const [hiddenIcsKeys,setHiddenIcsKeys]=useState<string[]>([]);
-  const [lastHiddenKey,setLastHiddenKey]=useState<string>("");
-  const [feedCoverage,setFeedCoverage]=useState<{from:string;to:string}|null>(null);
   const previewRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -618,91 +510,17 @@ export default function App(){
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
+      try{const raw=localStorage.getItem(LS_RATES_KEY);if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){setRates(arr);setRatesStatus("loaded");return;}}}catch{}
       setRatesStatus("loading");
-
-      // Use a cached table only when it belongs to the currently selected year.
-      try{
-        const cachedYear=Number(localStorage.getItem(LS_RATES_YEAR_KEY)||"");
-        const raw=localStorage.getItem(LS_RATES_KEY);
-        if(raw && cachedYear===selectedYear){
-          const arr=JSON.parse(raw);
-          if(Array.isArray(arr)&&arr.length){
-            if(!cancelled){setRates(arr);setRatesYear(cachedYear);setRatesStatus("loaded");}
-            return;
-          }
-        }
-      }catch{}
-
-      // Automatically load public/per_diem_YYYY.json for the selected report year.
-      for(const url of rateCandidatesForYear(selectedYear)){
-        try{
-          const res=await fetch(url,{cache:"no-store"});
-          if(!res.ok) continue;
-          const payload=await res.json();
-          const cleaned=normalizeRates(payload);
-          if(cleaned.length && !cancelled){
-            const fileYear=Number(payload?.year)||selectedYear;
-            setRates(cleaned);
-            setRatesYear(fileYear);
-            setRatesStatus("loaded");
-            try{
-              localStorage.setItem(LS_RATES_KEY,JSON.stringify(cleaned));
-              localStorage.setItem(LS_RATES_YEAR_KEY,String(fileYear));
-            }catch{}
-            return;
-          }
-        }catch{}
-      }
-
-      if(!cancelled){
-        setRates([]);
-        setRatesYear(null);
-        setRatesStatus("error");
-      }
+      for(const url of DEFAULT_RATE_CANDIDATES){try{const res=await fetch(url,{cache:"no-store"});if(!res.ok)continue;const cleaned=normalizeRates(await res.json());if(cleaned.length&&!cancelled){setRates(cleaned);setRatesStatus("loaded");try{localStorage.setItem(LS_RATES_KEY,JSON.stringify(cleaned));}catch{}return;}}catch{}}
+      if(!cancelled)setRatesStatus("error");
     })();
     return()=>{cancelled=true};
-  },[selectedYear]);
+  },[]);
 
   useEffect(()=>{try{const raw=localStorage.getItem(LS_EMPLOYEES_KEY);if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){setEmployees(arr);if(!arr.some((e:Employee)=>e.id===selectedEmpId))setSelectedEmpId(arr[0].id);}}}catch{}},[]);
   useEffect(()=>{try{localStorage.setItem(LS_EMPLOYEES_KEY,JSON.stringify(employees));}catch{}},[employees]);
-  useEffect(()=>{
-    try{
-      let tripLegs:Leg[]=[];
-      const raw=localStorage.getItem(LS_TRIPS_KEY);
-      if(raw){
-        const p=JSON.parse(raw);
-        if(Array.isArray(p.legs)) tripLegs=p.legs;
-        if(p.breakfastByDate&&typeof p.breakfastByDate==="object") setBreakfastByDate(p.breakfastByDate);
-      }
-
-      let archive:Leg[]=[];
-      const archiveRaw=localStorage.getItem(LS_FL3XX_ARCHIVE_KEY);
-      if(archiveRaw){
-        const parsed=JSON.parse(archiveRaw);
-        if(Array.isArray(parsed)) archive=parsed.filter((l:any)=>l&&l.source==="ICS");
-      }
-
-      const hiddenRaw=localStorage.getItem(LS_FL3XX_HIDDEN_KEY);
-      if(hiddenRaw){
-        const parsed=JSON.parse(hiddenRaw);
-        if(Array.isArray(parsed)) setHiddenIcsKeys(parsed.filter((x:any)=>typeof x==="string"));
-      }
-
-      // One-time migration: preserve FL3XX/ICS movements already stored in the old trips cache.
-      if(!archive.length && tripLegs.length){
-        archive=tripLegs.filter(l=>l.source==="ICS");
-        if(archive.length) localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));
-      }
-
-      setFl3xxArchive(archive);
-      if(tripLegs.length){
-        const combined=combineManualWithArchive(tripLegs,archive);
-        setLegs(combined.length?combined:tripLegs);
-      } else if(archive.length) {
-        setLegs(archive);
-      }
-    }catch{}
-  },[]);
+  useEffect(()=>{try{const raw=localStorage.getItem(LS_TRIPS_KEY);if(raw){const p=JSON.parse(raw);if(Array.isArray(p.legs))setLegs(p.legs);if(p.breakfastByDate&&typeof p.breakfastByDate==="object")setBreakfastByDate(p.breakfastByDate);}}catch{}},[]);
   useEffect(()=>{try{localStorage.setItem(LS_TRIPS_KEY,JSON.stringify({legs,breakfastByDate}));}catch{}},[legs,breakfastByDate]);
   useEffect(()=>{
     try {
@@ -719,7 +537,7 @@ export default function App(){
     try { localStorage.setItem(LS_FL3XX_SETTINGS_KEY, JSON.stringify({proxyUrl:fl3xxProxyUrl,feedUrl:fl3xxFeedUrl,user:fl3xxUser})); } catch {}
   },[fl3xxProxyUrl,fl3xxFeedUrl,fl3xxUser]);
 
-  function onUploadRatesFile(file:File){const r=new FileReader();r.onload=()=>{try{const text=String(r.result||"");const parsed=/^\s*[\[{]/.test(text)?normalizeRates(JSON.parse(text)):parseCSV(text);const m=file.name.match(/(20\d{2})/);const yr=m?Number(m[1]):null;setRates(parsed);setRatesYear(yr);setRatesStatus("loaded");try{localStorage.setItem(LS_RATES_KEY,JSON.stringify(parsed));if(yr)localStorage.setItem(LS_RATES_YEAR_KEY,String(yr));else localStorage.removeItem(LS_RATES_YEAR_KEY);}catch{}}catch{alert("Failed to parse rates file");}};r.readAsText(file);}
+  function onUploadRatesFile(file:File){const r=new FileReader();r.onload=()=>{try{const text=String(r.result||"");const parsed=/^\s*[\[{]/.test(text)?normalizeRates(JSON.parse(text)):parseCSV(text);setRates(parsed);setRatesStatus("loaded");try{localStorage.setItem(LS_RATES_KEY,JSON.stringify(parsed));}catch{}}catch{alert("Failed to parse rates file");}};r.readAsText(file);}
   function addOrUpdateEmployee(){const id=empForm.id.toUpperCase();if(!/^[A-Z]{3}$/.test(id)){alert("Employee ID must be exactly 3 letters");return;}const entry={...empForm,id,name:empForm.name.trim()||id};setEmployees(prev=>{const n=prev.some(e=>e.id===id)?prev.map(e=>e.id===id?entry:e):[...prev,entry];return n.sort((a,b)=>a.id.localeCompare(b.id));});setSelectedEmpId(id);setEmpPanelOpen(false);}
   function exportEmployeesJSON(){const blob=new Blob([JSON.stringify(employees,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="employees.json";a.click();URL.revokeObjectURL(url);}
   function onImportEmployeesFile(file:File){const r=new FileReader();r.onload=()=>{try{const arr=JSON.parse(String(r.result||""));if(!Array.isArray(arr))throw 0;const cleaned:Employee[]=arr.filter((e:any)=>/^[A-Z]{3}$/.test(String(e?.id||"").toUpperCase())).map((e:any)=>({id:String(e.id).toUpperCase(),name:String(e.name||e.id),basePrimary:{country:String(e?.basePrimary?.country||""),city:String(e?.basePrimary?.city||"")},baseSecondary:{country:String(e?.baseSecondary?.country||""),city:String(e?.baseSecondary?.city||"")}}));if(!cleaned.length)throw 0;setEmployees(cleaned);setSelectedEmpId(cleaned[0].id);}catch{alert("Invalid employees JSON");}};r.readAsText(file);}
@@ -735,63 +553,6 @@ export default function App(){
       }
       return merged.sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
     });
-  }
-
-  function saveHiddenIcsKeys(keys:string[]){
-    setHiddenIcsKeys(keys);
-    try{localStorage.setItem(LS_FL3XX_HIDDEN_KEY,JSON.stringify(keys));}catch{}
-  }
-  function hideIcsMovement(leg:Leg){
-    const key=legKey(leg);
-    if(hiddenIcsKeys.includes(key)) return;
-    const next=[...hiddenIcsKeys,key];
-    saveHiddenIcsKeys(next);
-    setLastHiddenKey(key);
-  }
-  function undoLastHide(){
-    if(!lastHiddenKey) return;
-    const next=hiddenIcsKeys.filter(k=>k!==lastHiddenKey);
-    saveHiddenIcsKeys(next);
-    setLastHiddenKey("");
-  }
-  function restoreAllHidden(){
-    saveHiddenIcsKeys([]);
-    setLastHiddenKey("");
-  }
-
-  function saveFl3xxArchive(archive:Leg[]){
-    setFl3xxArchive(archive);
-    try{localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));}catch{}
-  }
-  function exportFl3xxArchive(){
-    const payload={version:1,exportedAt:new Date().toISOString(),movements:fl3xxArchive};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=`fl3xx_archive_${selectedEmp?.id||"EMP"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-  function onImportFl3xxArchive(file:File){
-    const r=new FileReader();
-    r.onload=()=>{
-      try{
-        const parsed=JSON.parse(String(r.result||""));
-        const arr=Array.isArray(parsed)?parsed:parsed?.movements;
-        if(!Array.isArray(arr)) throw new Error("Invalid archive");
-        const cleaned:Leg[]=arr.filter((l:any)=>l&&l.startUtc&&l.endUtc&&l.from&&l.to).map((l:any)=>({...l,source:"ICS"}));
-        const seen=new Set<string>();
-        const merged=[...fl3xxArchive,...cleaned].filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-          .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-        saveFl3xxArchive(merged);
-        setLegs(prev=>combineManualWithArchive(prev,merged));
-        setIcsImportStatus(`Archive restored: ${cleaned.length} movement(s) read, ${merged.length} stored in total.`);
-      }catch{
-        alert("Invalid FL3XX archive file.");
-      }
-    };
-    r.readAsText(file);
   }
 
   async function syncFl3xxCalendar(){
@@ -816,36 +577,19 @@ export default function App(){
         throw new Error(message);
       }
       const allEvents=parseIcsCalendar(body,rates);
-      const coverage=eventFeedCoverage(allEvents);
-      setFeedCoverage(coverage);
-
-      // Keep a seven-day context on both sides of the requested range.
-      // This lets TRV/flight chains crossing a month boundary remain connected.
-      const context=expandedContextRange(fl3xxFromDate,fl3xxToDate,7);
-      const contextEvents=allEvents.filter(e=>eventOverlapsDateRange(e,context.from,context.to));
-      const result=buildLegsFromIcs(contextEvents,preferredProceedingHome(selectedEmp));
-
-      // Refresh only the part of the archive that the current FL3XX feed actually covers.
-      // Historical movements outside current feed coverage are NEVER deleted.
-      let nextArchive=fl3xxArchive;
-      const refreshWindow=coverage?rangeIntersection(context.from,context.to,coverage.from,coverage.to):null;
-      if(refreshWindow){
-        nextArchive=replaceImportedLegsForRange(fl3xxArchive,result.legs,refreshWindow.from,refreshWindow.to)
-          .filter(l=>l.source==="ICS");
-        saveFl3xxArchive(nextArchive);
-        setLegs(prev=>combineManualWithArchive(prev,nextArchive));
+      const events=allEvents.filter(e=>eventOverlapsDateRange(e,fl3xxFromDate,fl3xxToDate));
+      const result=buildLegsFromIcs(events,preferredProceedingHome(selectedEmp));
+      if(!result.legs.length){
+        const msg=result.stats.on>0 && result.stats.flights===0 && result.stats.trv===0
+          ? `No travel movements found. ${result.stats.on} ON event(s) were correctly ignored.`
+          : "No importable FL3XX Flight/TRV movements found in the calendar feed.";
+        setIcsImportStatus(msg);
+        return;
       }
-
-      const reportArchiveLegs=nextArchive.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
-      const reportFlights=reportArchiveLegs.filter(l=>l.movementType==="FLIGHT").length;
-      const reportTrv=reportArchiveLegs.filter(l=>l.movementType==="TRV").length;
-
-      let details=`Archive: ${nextArchive.length} movement(s). Report range contains ${reportFlights} flight(s), ${reportTrv} TRV proceeding(s).`;
-      if(coverage) details+=` FL3XX feed available: ${coverage.from} → ${coverage.to}.`;
-      if(coverage && fl3xxFromDate<coverage.from) details+=` Earlier dates are outside the current FL3XX feed and can only come from your local archive or manual ICS import.`;
+      mergeImportedLegs(result.legs);
+      const details=`Synced ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s) for ${fl3xxFromDate} → ${fl3xxToDate}. Ignored ${result.stats.on} ON event(s).`;
       const warningText=result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
       setIcsImportStatus(details+warningText);
-      setLastSyncAt(new Date().toLocaleString());
 
       // After a successful FL3XX sync, guide the user directly to the result.
       // Two animation frames give React time to render the imported movements first.
@@ -878,12 +622,8 @@ export default function App(){
         alert(msg);
         return;
       }
-      const seen=new Set<string>();
-      const mergedArchive=[...fl3xxArchive,...result.legs].filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-        .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-      saveFl3xxArchive(mergedArchive);
-      setLegs(prev=>combineManualWithArchive(prev,mergedArchive));
-      const details=`Imported ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s) into local archive. Ignored ${result.stats.on} ON event(s).`;
+      mergeImportedLegs(result.legs);
+      const details=`Imported ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s). Ignored ${result.stats.on} ON event(s).`;
       const warningText=result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
       setIcsImportStatus(details+warningText);
     }catch(err){
@@ -895,30 +635,10 @@ export default function App(){
 
   function addLeg(){setLegs(l=>[...l,{...makeDefaultLeg(),movementType:"MANUAL",source:"MANUAL"}]);}
   function addNextLeg(){setLegs(l=>{const last=l[l.length-1];if(!last)return[makeDefaultLeg()];const id=makeId();const start=last.endUtc;const d=new Date(start+":00Z");const endUtc=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),23,59)).toISOString().slice(0,16);return[...l,{id,startUtc:start,endUtc,from:{...last.to},to:{...last.from},movementType:"MANUAL",source:"MANUAL"}];});}
-  function removeLeg(id:string){
-    const target=legs.find(x=>x.id===id);
-    if(!target) return;
-    if(target.source==="ICS"){
-      hideIcsMovement(target);
-      return;
-    }
-    setLegs(prev=>prev.filter(x=>x.id!==id));
-  }
+  function removeLeg(id:string){setLegs(l=>l.filter(x=>x.id!==id));}
 
-  const homes=homeBasesFor(selectedEmp);
-  const visibleLegs=useMemo(()=>legs.filter(l=>l.source!=="ICS" || !hiddenIcsKeys.includes(legKey(l))),[legs,hiddenIcsKeys]);
-  const calcAll=useMemo(()=>buildDailyPerDiems(visibleLegs,rates,homes,breakfastByDate),[visibleLegs,rates,selectedEmp,breakfastByDate]);
-  const calc=useMemo(()=>({
-    items:calcAll.items.filter(it=>it.date>=fl3xxFromDate && it.date<=fl3xxToDate),
-    warnings:calcAll.warnings,
-  }),[calcAll,fl3xxFromDate,fl3xxToDate]);
+  const calc=useMemo(()=>buildDailyPerDiems(legs,rates,homeBasesFor(selectedEmp),breakfastByDate),[legs,rates,selectedEmp,breakfastByDate]);
   const totalEUR=calc.items.reduce((s,it)=>s+it.perDiemEUR,0);
-  const tripSummary=useMemo(()=>summarizeTrips(visibleLegs,homes),[visibleLegs,selectedEmp]);
-  const ratesYearMismatch=!!ratesYear && Number.isFinite(selectedYear) && selectedYear!==ratesYear;
-  const monthLegs=visibleLegs.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
-  const monthFlights=monthLegs.filter(l=>l.movementType==="FLIGHT").length;
-  const monthTrv=monthLegs.filter(l=>l.movementType==="TRV").length;
-  const monthManual=monthLegs.filter(l=>l.movementType==="MANUAL").length;
   const allBreakfastChecked=calc.items.length>0 && calc.items.every(it=>!!breakfastByDate[it.date]);
   function setBreakfastForAll(checked:boolean){
     setBreakfastByDate(prev=>{
@@ -970,35 +690,16 @@ export default function App(){
     </div>
 
     <div className="flex items-center gap-3 flex-wrap">
-      <Card className="p-3 flex items-center gap-3">
-        <Badge className={ratesStatus==="error"||ratesYearMismatch?"border-amber-300 bg-amber-50 text-amber-800":"border-emerald-200 bg-emerald-50 text-emerald-700"}>
-          {ratesStatus==="loaded" ? `Rates ${ratesYear} · automatic` : ratesStatus==="loading" ? `Loading ${selectedYear} rates…` : `Rates ${selectedYear} missing`}
-        </Badge>
-        <label className="text-xs cursor-pointer text-slate-500 hover:text-slate-700"><input type="file" accept=".json,.csv" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onUploadRatesFile(f);}}/><span className="inline-flex items-center gap-1"><IconUpload className="h-3.5 w-3.5"/> Manual override</span></label>
-      </Card>
+      <Card className="p-3 flex items-center gap-3"><Badge>rates: {ratesStatus}</Badge><label className="text-sm cursor-pointer"><input type="file" accept=".json,.csv" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onUploadRatesFile(f);}}/><span className="inline-flex items-center gap-2"><IconUpload className="h-4 w-4"/> Load rates</span></label></Card>
       <Card className="p-3 flex items-center gap-2">
         <Button variant="outline" onClick={()=>setFl3xxPanelOpen(v=>!v)}>FL3XX settings</Button>
         <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500"><span>{fl3xxFromDate}</span><span>→</span><span>{fl3xxToDate}</span></div>
-        <Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Refreshing…":"Refresh FL3XX"}</Button>
+        <Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Syncing…":"Sync FL3XX"}</Button>
       </Card>
       <Card className="p-3 flex items-center gap-3"><label className="text-sm cursor-pointer"><input type="file" accept=".ics,text/calendar" multiple className="hidden" onChange={e=>{void onImportIcsFiles(e.target.files);e.currentTarget.value="";}}/><span className="inline-flex items-center gap-2 text-slate-600"><IconUpload className="h-4 w-4"/> Manual ICS import</span></label></Card>
       <div className="grow"/><Button variant="outline" onClick={exportCSV}>Export CSV</Button>
     </div>
-    {(ratesStatus==="error"||ratesYearMismatch) && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-      {ratesStatus==="error"
-        ? <><strong>Rates {selectedYear} not found.</strong> Add <code>per_diem_{selectedYear}.json</code> to the app's <code>public</code> folder.</>
-        : <><strong>Rates year mismatch:</strong> selected month is {selectedYear}, but loaded rates are {ratesYear}.</>}
-    </div>}
-    {icsImportStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-      {icsImportStatus}{lastSyncAt?<span className="ml-2 text-sky-600">Last refresh: {lastSyncAt}</span>:null}
-    </div>}
-    {(feedCoverage||fl3xxArchive.length>0) && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 px-1">
-      {feedCoverage&&<span>Current FL3XX feed coverage: <strong>{feedCoverage.from} → {feedCoverage.to}</strong></span>}
-      <span>Local archive: <strong>{fl3xxArchive.length}</strong> movement(s)</span>
-      {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
-      {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
-      {feedCoverage&&fl3xxFromDate<feedCoverage.from&&<span className="text-amber-700">Selected range starts before FL3XX feed history.</span>}
-    </div>}
+    {icsImportStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">{icsImportStatus}</div>}
 
     {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX Calendar Connection</CardTitle></CardHeader><CardContent>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1009,18 +710,6 @@ export default function App(){
               <label className="mb-1 block text-sm font-medium">Proxy URL</label>
               <Input placeholder="https://your-worker.workers.dev/" value={fl3xxProxyUrl} onChange={e=>setFl3xxProxyUrl(e.target.value)}/>
               <div className="mt-1 text-xs text-neutral-500">Normally you do not need to change this. The company proxy is preconfigured.</div>
-              <div className="mt-4 border-t border-slate-200 pt-3">
-                <div className="text-sm font-medium">FL3XX local archive</div>
-                <div className="mt-1 text-xs text-slate-500">Stored only in this browser. FL3XX movements are never deleted from the archive by the movement list; “Hide from report” only excludes them from calculations. Backup is useful before changing computer or clearing browser data.</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={exportFl3xxArchive} disabled={!fl3xxArchive.length}>Backup archive</Button>
-                  <Button type="button" variant="secondary" onClick={restoreAllHidden} disabled={!hiddenIcsKeys.length}>Restore hidden ({hiddenIcsKeys.length})</Button>
-                  <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
-                    <input type="file" accept="application/json,.json" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onImportFl3xxArchive(f);e.currentTarget.value="";}}/>
-                    Restore archive
-                  </label>
-                </div>
-              </div>
             </div>
           </details>
         </div>
@@ -1030,58 +719,24 @@ export default function App(){
         <div><label className="mb-1 block text-sm font-medium">Import from</label><Input type="date" value={fl3xxFromDate} onChange={e=>setFl3xxFromDate(e.target.value)}/></div>
         <div><label className="mb-1 block text-sm font-medium">Import to</label><Input type="date" value={fl3xxToDate} onChange={e=>setFl3xxToDate(e.target.value)}/><div className="mt-1 text-xs text-slate-500">Defaults to the selected month. You can narrow it to any duty period.</div></div>
       </div>
-      <div className="mt-3 flex gap-2"><Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Refreshing…":"Refresh now"}</Button><Button variant="secondary" onClick={()=>setFl3xxPanelOpen(false)}>Close</Button></div>
+      <div className="mt-3 flex gap-2"><Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Syncing…":"Test & Sync"}</Button><Button variant="secondary" onClick={()=>setFl3xxPanelOpen(false)}>Close</Button></div>
     </CardContent></Card>}
 
-    <Card className="overflow-hidden">
-      <CardContent className="py-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-semibold">{month}</span>
-          <Badge className="border-sky-200 bg-sky-50 text-sky-700">{monthFlights} Flight{monthFlights===1?"":"s"}</Badge>
-          <Badge className="border-amber-200 bg-amber-50 text-amber-700">{monthTrv} TRV</Badge>
-          {monthManual>0&&<Badge className="border-violet-200 bg-violet-50 text-violet-700">{monthManual} Manual</Badge>}
-          <Badge>{calc.items.length} per-diem day{calc.items.length===1?"":"s"}</Badge>
-          <span className="ml-auto font-semibold">€ {totalEUR.toFixed(2)}</span>
-          {tripSummary.open>0
-            ? <Badge className="border-amber-300 bg-amber-100 text-amber-800">Open trip — return to home base missing</Badge>
-            : tripSummary.closed>0
-              ? <Badge className="border-emerald-300 bg-emerald-100 text-emerald-800">Trips closed{tripSummary.lastClosedAt?` · ${locLabel(tripSummary.lastClosedAt)}`:""}</Badge>
-              : <Badge className="text-slate-500">No per-diem trip detected</Badge>}
-        </div>
-      </CardContent>
-    </Card>
-
     <Card><CardHeader className="flex items-center justify-between"><CardTitle>Trip Legs (UTC)</CardTitle><div className="flex gap-2"><Button variant="secondary" className="gap-2" onClick={addLeg}><IconPlus className="h-4 w-4"/> Add new leg</Button><Button variant="secondary" className="gap-2" onClick={addNextLeg}><IconPlus className="h-4 w-4"/> Next leg</Button></div></CardHeader>
-      <CardContent className="space-y-3">{visibleLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
+      <CardContent className="space-y-3">{legs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
         <div className="lg:col-span-2"><label className="text-xs block">Start UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.startUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,startUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">End UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.endUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,endUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">From — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.from.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">From — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.from.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{...x.from,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.from.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
         <div className="lg:col-span-2"><label className="text-xs block">To — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.to.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">To — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.to.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{...x.to,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.to.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
-        <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}>{leg.source==="ICS" ? <>Hide from report</> : <><IconTrash className="h-4 w-4"/> Remove</>}</Button></div>
+        <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}><IconTrash className="h-4 w-4"/> Remove</Button></div>
       </div>})}</CardContent>
     </Card>
 
     <Card><CardHeader><CardTitle>Calculation Preview</CardTitle></CardHeader><CardContent className="overflow-x-auto" ref={previewRef}>
-      <table className="w-full text-sm"><thead><tr className="text-left border-b border-slate-200 bg-slate-50/80">
-        <th className="py-2 pr-3 whitespace-nowrap">Day (UTC)</th><th className="pr-3">Start</th><th className="pr-3">End</th>
-        <th className="pr-4">From</th><th className="pr-4">To</th><th className="pr-4 whitespace-nowrap">Rate</th><th className="pr-3">Type</th>
-        <th className="pr-4"><div className="flex items-center gap-2"><span>Breakfast</span><label className="inline-flex items-center gap-1 text-xs font-normal text-slate-500"><input type="checkbox" checked={allBreakfastChecked} disabled={!calc.items.length} onChange={e=>setBreakfastForAll(e.target.checked)}/><span>All</span></label></div></th>
-        <th className="pr-4 whitespace-nowrap">Per-Diem (€)</th><th className="whitespace-nowrap">Reason</th>
-      </tr></thead><tbody>
-        {calc.items.map(it=>{const full=it.dayType==="FULL";return <tr key={it.date} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
-          <td className="py-2 pr-3 whitespace-nowrap">{it.date}</td>
-          <td className="pr-3 whitespace-nowrap">{full?"full day":hhmm(it.startUtc)}</td>
-          <td className="pr-3 whitespace-nowrap">{full?"full day":hhmm(it.endUtc)}</td>
-          <td className="pr-4"><span title={locLabel(it.from)} className="whitespace-nowrap font-medium text-slate-700">{compactLocLabel(it.from)}</span></td>
-          <td className="pr-4"><span title={locLabel(it.to)} className="whitespace-nowrap font-medium text-slate-700">{compactLocLabel(it.to)}</span></td>
-          <td className="pr-4"><span title={locLabel(it.rateLocation)} className="whitespace-nowrap font-semibold">{compactLocLabel(it.rateLocation)}</span></td>
-          <td className="pr-3"><Badge className={it.dayType==="FULL"?"border-emerald-200 bg-emerald-50 text-emerald-700":it.dayType==="HALF"?"border-sky-200 bg-sky-50 text-sky-700":"border-slate-200 bg-slate-50 text-slate-600"}>{it.dayType}</Badge></td>
-          <td className="pr-4"><input type="checkbox" checked={!!breakfastByDate[it.date]} onChange={e=>setBreakfastByDate(prev=>({...prev,[it.date]:e.target.checked}))}/></td>
-          <td className="pr-4 font-semibold tabular-nums">{it.perDiemEUR.toFixed(2)}</td>
-          <td className="text-slate-500 whitespace-nowrap" title={it.reason}>{compactReason(it)}</td>
-        </tr>})}
+      <table className="w-full text-sm"><thead><tr className="text-left border-b border-slate-200 bg-slate-50/80"><th className="py-2">Day (UTC)</th><th>Start</th><th>End</th><th>From</th><th>To</th><th>Rate location</th><th>Type</th><th><div className="flex items-center gap-2"><span>Breakfast</span><label className="inline-flex items-center gap-1 text-xs font-normal text-slate-500"><input type="checkbox" checked={allBreakfastChecked} disabled={!calc.items.length} onChange={e=>setBreakfastForAll(e.target.checked)}/><span>All</span></label></div></th><th>Per-Diem (€)</th><th>Reason</th></tr></thead><tbody>
+        {calc.items.map(it=>{const full=it.dayType==="FULL";return <tr key={it.date} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"><td className="py-2">{it.date}</td><td>{full?"full day":hhmm(it.startUtc)}</td><td>{full?"full day":hhmm(it.endUtc)}</td><td>{locLabel(it.from)}</td><td>{locLabel(it.to)}</td><td className="font-medium">{locLabel(it.rateLocation)}</td><td>{it.dayType}</td><td><input type="checkbox" checked={!!breakfastByDate[it.date]} onChange={e=>setBreakfastByDate(prev=>({...prev,[it.date]:e.target.checked}))}/></td><td className="font-medium">{it.perDiemEUR.toFixed(2)}</td><td className="text-neutral-500">{it.reason}</td></tr>})}
       </tbody></table>
       {calc.warnings.length>0&&<div className="mt-3 text-xs text-amber-700">{calc.warnings.map((w,i)=><div key={i}>• {w}</div>)}</div>}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">

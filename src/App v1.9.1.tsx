@@ -79,8 +79,6 @@ const LS_RATES_YEAR_KEY = "perdiem_rates_year_v1";
 const LS_TRIPS_KEY = "perdiem_trips_v2";
 const LS_EMPLOYEES_KEY = "perdiem_employees_v1";
 const LS_FL3XX_SETTINGS_KEY = "perdiem_fl3xx_settings_v1";
-const LS_FL3XX_ARCHIVE_KEY = "perdiem_fl3xx_archive_v1";
-const LS_FL3XX_HIDDEN_KEY = "perdiem_fl3xx_hidden_v1";
 const DEFAULT_FL3XX_PROXY_URL = "https://fl3xx-perdiem-proxy.triplezulu.workers.dev/";
 
 const SAFE_BASE_URL: string = (() => {
@@ -191,14 +189,6 @@ function eventOverlapsDateRange(e:ParsedIcsEvent, fromDate:string, toDate:string
   const endMs=new Date(e.endUtc+":00Z").getTime();
   return endMs>=fromMs && startMs<=toMs;
 }
-function shiftIsoDate(date:string,days:number){
-  const d=new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate()+days);
-  return isoDate(d);
-}
-function expandedContextRange(fromDate:string,toDate:string,days=7){
-  return {from:shiftIsoDate(fromDate,-days),to:shiftIsoDate(toDate,days)};
-}
 function legOverlapsDateRange(l:Leg, fromDate:string, toDate:string){
   if(!l.startUtc || !l.endUtc) return false;
   const fromMs=new Date(`${fromDate}T00:00:00Z`).getTime();
@@ -216,30 +206,6 @@ function replaceImportedLegsForRange(existing:Leg[], imported:Leg[], fromDate:st
     if(!seen.has(key)){ seen.add(key); merged.push(leg); }
   }
   return merged.sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-}
-
-function combineManualWithArchive(existing:Leg[], archive:Leg[]){
-  const manual=existing.filter(l=>l.source!=="ICS" && !looksLikePlaceholderLeg(l));
-  const seen=new Set<string>();
-  const merged:Leg[]=[];
-  for(const leg of [...manual,...archive]){
-    const key=legKey(leg);
-    if(!seen.has(key)){ seen.add(key); merged.push(leg); }
-  }
-  if(!merged.length) return existing.length ? existing : [];
-  return merged.sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-}
-function eventFeedCoverage(events:ParsedIcsEvent[]){
-  const timed=events.filter(e=>e.startUtc && e.endUtc);
-  if(!timed.length) return null;
-  const starts=timed.map(e=>e.startUtc.slice(0,10)).sort();
-  const ends=timed.map(e=>e.endUtc.slice(0,10)).sort();
-  return {from:starts[0],to:ends[ends.length-1]};
-}
-function rangeIntersection(aFrom:string,aTo:string,bFrom:string,bTo:string){
-  const from=aFrom>bFrom?aFrom:bFrom;
-  const to=aTo<bTo?aTo:bTo;
-  return from<=to?{from,to}:null;
 }
 function movementTone(type?:MovementType){
   if(type==="FLIGHT") return {row:"border-l-4 border-l-sky-500 bg-sky-50/40",badge:"border-sky-200 bg-sky-100 text-sky-700"};
@@ -553,8 +519,6 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     console.assert(DEFAULT_FL3XX_PROXY_URL.startsWith("https://") && DEFAULT_FL3XX_PROXY_URL.includes("workers.dev"),"default FL3XX proxy URL should be configured");
     console.assert(monthDateBounds("2028-02").to==="2028-02-29","month bounds should cover full leap February");
     console.assert(eventOverlapsDateRange({kind:"FLIGHT",summary:"",startUtc:"2026-08-31T23:00",endUtc:"2026-09-01T01:00",locationText:""},"2026-08-01","2026-08-31"),"date range should include overlapping events");
-    const ctx=expandedContextRange("2026-08-01","2026-08-31",7);
-    console.assert(ctx.from==="2026-07-25" && ctx.to==="2026-09-07","sync context should extend seven days around selected range");
     const manualKeep:Leg={id:"m",startUtc:"2026-09-10T08:00",endUtc:"2026-09-10T09:00",from:homes[1],to:{country:"France",city:"Paris"},movementType:"MANUAL",source:"MANUAL"};
     const oldIcs:Leg={id:"old",startUtc:"2026-09-10T10:00",endUtc:"2026-09-10T11:00",from:{country:"France",city:"Paris"},to:{country:"Italy",city:"Olbia"},movementType:"FLIGHT",source:"ICS"};
     const outsideIcs:Leg={id:"outside",startUtc:"2026-10-02T10:00",endUtc:"2026-10-02T11:00",from:homes[1],to:{country:"France",city:"Paris"},movementType:"FLIGHT",source:"ICS"};
@@ -603,10 +567,6 @@ export default function App(){
   const [fl3xxSyncing,setFl3xxSyncing]=useState(false);
   const [fl3xxPanelOpen,setFl3xxPanelOpen]=useState(false);
   const [lastSyncAt,setLastSyncAt]=useState<string>("");
-  const [fl3xxArchive,setFl3xxArchive]=useState<Leg[]>([]);
-  const [hiddenIcsKeys,setHiddenIcsKeys]=useState<string[]>([]);
-  const [lastHiddenKey,setLastHiddenKey]=useState<string>("");
-  const [feedCoverage,setFeedCoverage]=useState<{from:string;to:string}|null>(null);
   const previewRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -665,44 +625,7 @@ export default function App(){
 
   useEffect(()=>{try{const raw=localStorage.getItem(LS_EMPLOYEES_KEY);if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){setEmployees(arr);if(!arr.some((e:Employee)=>e.id===selectedEmpId))setSelectedEmpId(arr[0].id);}}}catch{}},[]);
   useEffect(()=>{try{localStorage.setItem(LS_EMPLOYEES_KEY,JSON.stringify(employees));}catch{}},[employees]);
-  useEffect(()=>{
-    try{
-      let tripLegs:Leg[]=[];
-      const raw=localStorage.getItem(LS_TRIPS_KEY);
-      if(raw){
-        const p=JSON.parse(raw);
-        if(Array.isArray(p.legs)) tripLegs=p.legs;
-        if(p.breakfastByDate&&typeof p.breakfastByDate==="object") setBreakfastByDate(p.breakfastByDate);
-      }
-
-      let archive:Leg[]=[];
-      const archiveRaw=localStorage.getItem(LS_FL3XX_ARCHIVE_KEY);
-      if(archiveRaw){
-        const parsed=JSON.parse(archiveRaw);
-        if(Array.isArray(parsed)) archive=parsed.filter((l:any)=>l&&l.source==="ICS");
-      }
-
-      const hiddenRaw=localStorage.getItem(LS_FL3XX_HIDDEN_KEY);
-      if(hiddenRaw){
-        const parsed=JSON.parse(hiddenRaw);
-        if(Array.isArray(parsed)) setHiddenIcsKeys(parsed.filter((x:any)=>typeof x==="string"));
-      }
-
-      // One-time migration: preserve FL3XX/ICS movements already stored in the old trips cache.
-      if(!archive.length && tripLegs.length){
-        archive=tripLegs.filter(l=>l.source==="ICS");
-        if(archive.length) localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));
-      }
-
-      setFl3xxArchive(archive);
-      if(tripLegs.length){
-        const combined=combineManualWithArchive(tripLegs,archive);
-        setLegs(combined.length?combined:tripLegs);
-      } else if(archive.length) {
-        setLegs(archive);
-      }
-    }catch{}
-  },[]);
+  useEffect(()=>{try{const raw=localStorage.getItem(LS_TRIPS_KEY);if(raw){const p=JSON.parse(raw);if(Array.isArray(p.legs))setLegs(p.legs);if(p.breakfastByDate&&typeof p.breakfastByDate==="object")setBreakfastByDate(p.breakfastByDate);}}catch{}},[]);
   useEffect(()=>{try{localStorage.setItem(LS_TRIPS_KEY,JSON.stringify({legs,breakfastByDate}));}catch{}},[legs,breakfastByDate]);
   useEffect(()=>{
     try {
@@ -737,63 +660,6 @@ export default function App(){
     });
   }
 
-  function saveHiddenIcsKeys(keys:string[]){
-    setHiddenIcsKeys(keys);
-    try{localStorage.setItem(LS_FL3XX_HIDDEN_KEY,JSON.stringify(keys));}catch{}
-  }
-  function hideIcsMovement(leg:Leg){
-    const key=legKey(leg);
-    if(hiddenIcsKeys.includes(key)) return;
-    const next=[...hiddenIcsKeys,key];
-    saveHiddenIcsKeys(next);
-    setLastHiddenKey(key);
-  }
-  function undoLastHide(){
-    if(!lastHiddenKey) return;
-    const next=hiddenIcsKeys.filter(k=>k!==lastHiddenKey);
-    saveHiddenIcsKeys(next);
-    setLastHiddenKey("");
-  }
-  function restoreAllHidden(){
-    saveHiddenIcsKeys([]);
-    setLastHiddenKey("");
-  }
-
-  function saveFl3xxArchive(archive:Leg[]){
-    setFl3xxArchive(archive);
-    try{localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));}catch{}
-  }
-  function exportFl3xxArchive(){
-    const payload={version:1,exportedAt:new Date().toISOString(),movements:fl3xxArchive};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=`fl3xx_archive_${selectedEmp?.id||"EMP"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-  function onImportFl3xxArchive(file:File){
-    const r=new FileReader();
-    r.onload=()=>{
-      try{
-        const parsed=JSON.parse(String(r.result||""));
-        const arr=Array.isArray(parsed)?parsed:parsed?.movements;
-        if(!Array.isArray(arr)) throw new Error("Invalid archive");
-        const cleaned:Leg[]=arr.filter((l:any)=>l&&l.startUtc&&l.endUtc&&l.from&&l.to).map((l:any)=>({...l,source:"ICS"}));
-        const seen=new Set<string>();
-        const merged=[...fl3xxArchive,...cleaned].filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-          .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-        saveFl3xxArchive(merged);
-        setLegs(prev=>combineManualWithArchive(prev,merged));
-        setIcsImportStatus(`Archive restored: ${cleaned.length} movement(s) read, ${merged.length} stored in total.`);
-      }catch{
-        alert("Invalid FL3XX archive file.");
-      }
-    };
-    r.readAsText(file);
-  }
-
   async function syncFl3xxCalendar(){
     const proxy=fl3xxProxyUrl.trim();
     const feed=fl3xxFeedUrl.trim();
@@ -816,33 +682,17 @@ export default function App(){
         throw new Error(message);
       }
       const allEvents=parseIcsCalendar(body,rates);
-      const coverage=eventFeedCoverage(allEvents);
-      setFeedCoverage(coverage);
-
-      // Keep a seven-day context on both sides of the requested range.
-      // This lets TRV/flight chains crossing a month boundary remain connected.
-      const context=expandedContextRange(fl3xxFromDate,fl3xxToDate,7);
-      const contextEvents=allEvents.filter(e=>eventOverlapsDateRange(e,context.from,context.to));
-      const result=buildLegsFromIcs(contextEvents,preferredProceedingHome(selectedEmp));
-
-      // Refresh only the part of the archive that the current FL3XX feed actually covers.
-      // Historical movements outside current feed coverage are NEVER deleted.
-      let nextArchive=fl3xxArchive;
-      const refreshWindow=coverage?rangeIntersection(context.from,context.to,coverage.from,coverage.to):null;
-      if(refreshWindow){
-        nextArchive=replaceImportedLegsForRange(fl3xxArchive,result.legs,refreshWindow.from,refreshWindow.to)
-          .filter(l=>l.source==="ICS");
-        saveFl3xxArchive(nextArchive);
-        setLegs(prev=>combineManualWithArchive(prev,nextArchive));
+      const events=allEvents.filter(e=>eventOverlapsDateRange(e,fl3xxFromDate,fl3xxToDate));
+      const result=buildLegsFromIcs(events,preferredProceedingHome(selectedEmp));
+      if(!result.legs.length){
+        const msg=result.stats.on>0 && result.stats.flights===0 && result.stats.trv===0
+          ? `No travel movements found. ${result.stats.on} ON event(s) were correctly ignored.`
+          : "No importable FL3XX Flight/TRV movements found in the calendar feed.";
+        setIcsImportStatus(msg);
+        return;
       }
-
-      const reportArchiveLegs=nextArchive.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
-      const reportFlights=reportArchiveLegs.filter(l=>l.movementType==="FLIGHT").length;
-      const reportTrv=reportArchiveLegs.filter(l=>l.movementType==="TRV").length;
-
-      let details=`Archive: ${nextArchive.length} movement(s). Report range contains ${reportFlights} flight(s), ${reportTrv} TRV proceeding(s).`;
-      if(coverage) details+=` FL3XX feed available: ${coverage.from} → ${coverage.to}.`;
-      if(coverage && fl3xxFromDate<coverage.from) details+=` Earlier dates are outside the current FL3XX feed and can only come from your local archive or manual ICS import.`;
+      setLegs(prev=>replaceImportedLegsForRange(prev,result.legs,fl3xxFromDate,fl3xxToDate));
+      const details=`Synced ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s) for ${fl3xxFromDate} → ${fl3xxToDate}. Ignored ${result.stats.on} ON event(s).`;
       const warningText=result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
       setIcsImportStatus(details+warningText);
       setLastSyncAt(new Date().toLocaleString());
@@ -878,12 +728,8 @@ export default function App(){
         alert(msg);
         return;
       }
-      const seen=new Set<string>();
-      const mergedArchive=[...fl3xxArchive,...result.legs].filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-        .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-      saveFl3xxArchive(mergedArchive);
-      setLegs(prev=>combineManualWithArchive(prev,mergedArchive));
-      const details=`Imported ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s) into local archive. Ignored ${result.stats.on} ON event(s).`;
+      mergeImportedLegs(result.legs);
+      const details=`Imported ${result.stats.flights} flight(s), ${result.stats.trv} TRV proceeding(s). Ignored ${result.stats.on} ON event(s).`;
       const warningText=result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
       setIcsImportStatus(details+warningText);
     }catch(err){
@@ -895,27 +741,14 @@ export default function App(){
 
   function addLeg(){setLegs(l=>[...l,{...makeDefaultLeg(),movementType:"MANUAL",source:"MANUAL"}]);}
   function addNextLeg(){setLegs(l=>{const last=l[l.length-1];if(!last)return[makeDefaultLeg()];const id=makeId();const start=last.endUtc;const d=new Date(start+":00Z");const endUtc=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),23,59)).toISOString().slice(0,16);return[...l,{id,startUtc:start,endUtc,from:{...last.to},to:{...last.from},movementType:"MANUAL",source:"MANUAL"}];});}
-  function removeLeg(id:string){
-    const target=legs.find(x=>x.id===id);
-    if(!target) return;
-    if(target.source==="ICS"){
-      hideIcsMovement(target);
-      return;
-    }
-    setLegs(prev=>prev.filter(x=>x.id!==id));
-  }
+  function removeLeg(id:string){setLegs(l=>l.filter(x=>x.id!==id));}
 
   const homes=homeBasesFor(selectedEmp);
-  const visibleLegs=useMemo(()=>legs.filter(l=>l.source!=="ICS" || !hiddenIcsKeys.includes(legKey(l))),[legs,hiddenIcsKeys]);
-  const calcAll=useMemo(()=>buildDailyPerDiems(visibleLegs,rates,homes,breakfastByDate),[visibleLegs,rates,selectedEmp,breakfastByDate]);
-  const calc=useMemo(()=>({
-    items:calcAll.items.filter(it=>it.date>=fl3xxFromDate && it.date<=fl3xxToDate),
-    warnings:calcAll.warnings,
-  }),[calcAll,fl3xxFromDate,fl3xxToDate]);
+  const calc=useMemo(()=>buildDailyPerDiems(legs,rates,homes,breakfastByDate),[legs,rates,selectedEmp,breakfastByDate]);
   const totalEUR=calc.items.reduce((s,it)=>s+it.perDiemEUR,0);
-  const tripSummary=useMemo(()=>summarizeTrips(visibleLegs,homes),[visibleLegs,selectedEmp]);
+  const tripSummary=useMemo(()=>summarizeTrips(legs,homes),[legs,selectedEmp]);
   const ratesYearMismatch=!!ratesYear && Number.isFinite(selectedYear) && selectedYear!==ratesYear;
-  const monthLegs=visibleLegs.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
+  const monthLegs=legs.filter(l=>l.startUtc.startsWith(month));
   const monthFlights=monthLegs.filter(l=>l.movementType==="FLIGHT").length;
   const monthTrv=monthLegs.filter(l=>l.movementType==="TRV").length;
   const monthManual=monthLegs.filter(l=>l.movementType==="MANUAL").length;
@@ -992,13 +825,6 @@ export default function App(){
     {icsImportStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
       {icsImportStatus}{lastSyncAt?<span className="ml-2 text-sky-600">Last refresh: {lastSyncAt}</span>:null}
     </div>}
-    {(feedCoverage||fl3xxArchive.length>0) && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 px-1">
-      {feedCoverage&&<span>Current FL3XX feed coverage: <strong>{feedCoverage.from} → {feedCoverage.to}</strong></span>}
-      <span>Local archive: <strong>{fl3xxArchive.length}</strong> movement(s)</span>
-      {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
-      {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
-      {feedCoverage&&fl3xxFromDate<feedCoverage.from&&<span className="text-amber-700">Selected range starts before FL3XX feed history.</span>}
-    </div>}
 
     {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX Calendar Connection</CardTitle></CardHeader><CardContent>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1009,18 +835,6 @@ export default function App(){
               <label className="mb-1 block text-sm font-medium">Proxy URL</label>
               <Input placeholder="https://your-worker.workers.dev/" value={fl3xxProxyUrl} onChange={e=>setFl3xxProxyUrl(e.target.value)}/>
               <div className="mt-1 text-xs text-neutral-500">Normally you do not need to change this. The company proxy is preconfigured.</div>
-              <div className="mt-4 border-t border-slate-200 pt-3">
-                <div className="text-sm font-medium">FL3XX local archive</div>
-                <div className="mt-1 text-xs text-slate-500">Stored only in this browser. FL3XX movements are never deleted from the archive by the movement list; “Hide from report” only excludes them from calculations. Backup is useful before changing computer or clearing browser data.</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={exportFl3xxArchive} disabled={!fl3xxArchive.length}>Backup archive</Button>
-                  <Button type="button" variant="secondary" onClick={restoreAllHidden} disabled={!hiddenIcsKeys.length}>Restore hidden ({hiddenIcsKeys.length})</Button>
-                  <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
-                    <input type="file" accept="application/json,.json" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onImportFl3xxArchive(f);e.currentTarget.value="";}}/>
-                    Restore archive
-                  </label>
-                </div>
-              </div>
             </div>
           </details>
         </div>
@@ -1052,14 +866,14 @@ export default function App(){
     </Card>
 
     <Card><CardHeader className="flex items-center justify-between"><CardTitle>Trip Legs (UTC)</CardTitle><div className="flex gap-2"><Button variant="secondary" className="gap-2" onClick={addLeg}><IconPlus className="h-4 w-4"/> Add new leg</Button><Button variant="secondary" className="gap-2" onClick={addNextLeg}><IconPlus className="h-4 w-4"/> Next leg</Button></div></CardHeader>
-      <CardContent className="space-y-3">{visibleLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
+      <CardContent className="space-y-3">{legs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
         <div className="lg:col-span-2"><label className="text-xs block">Start UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.startUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,startUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">End UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.endUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,endUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">From — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.from.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">From — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.from.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{...x.from,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.from.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
         <div className="lg:col-span-2"><label className="text-xs block">To — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.to.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">To — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.to.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{...x.to,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.to.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
-        <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}>{leg.source==="ICS" ? <>Hide from report</> : <><IconTrash className="h-4 w-4"/> Remove</>}</Button></div>
+        <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}><IconTrash className="h-4 w-4"/> Remove</Button></div>
       </div>})}</CardContent>
     </Card>
 
