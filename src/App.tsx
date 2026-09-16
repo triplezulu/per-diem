@@ -1612,15 +1612,399 @@ export default function App(){
   async function exportPDF(){
     if(!requirePilotProfile("exporting PDF")) return;
     try{
-      const node=previewRef.current;if(!node){alert("Preview not ready");return;}
-      const [html2canvasMod,jsPDFMod]=await Promise.all([import(/* @vite-ignore */ "html2canvas"),import(/* @vite-ignore */ "jspdf")]);
-      const html2canvas=(html2canvasMod as any).default||html2canvasMod;const {jsPDF}=jsPDFMod as any;
-      const pdf=new jsPDF({orientation:"p",unit:"pt",format:"a4"});const pw=pdf.internal.pageSize.getWidth();const ph=pdf.internal.pageSize.getHeight();const margin=28;let y=margin;
-      let logo:string|null=null;try{const res=await fetch(DEFAULT_LOGO_URL,{cache:"no-store"});if(res.ok){const blob=await res.blob();logo=await new Promise<string>(resolve=>{const fr=new FileReader();fr.onload=()=>resolve(String(fr.result));fr.readAsDataURL(blob);});}}catch{}
-      if(logo)pdf.addImage(logo,"PNG",margin,y,108,36);
-      pdf.setFontSize(12);pdf.text(`Employee: ${selectedEmp?.id||""}${selectedEmp?.name?" — "+selectedEmp.name:""}`,pw-margin,y+14,{align:"right"});pdf.text(`Month: ${month}`,pw-margin,y+30,{align:"right"});pdf.text(`Total per-diem: EUR ${totalEUR.toFixed(2)}`,pw-margin,y+46,{align:"right"});y+=58;pdf.setDrawColor(200);pdf.line(margin,y,pw-margin,y);y+=10;
-      const canvas=await html2canvas(node,{scale:2,useCORS:true,backgroundColor:"#fff"});const imgW=pw-margin*2;const space=ph-y-margin;const sliceH=Math.max(1,Math.floor(canvas.width*(space/imgW)));let pos=0;while(pos<canvas.height){const slice=document.createElement("canvas");slice.width=canvas.width;slice.height=Math.min(sliceH,canvas.height-pos);slice.getContext("2d")!.drawImage(canvas,0,pos,canvas.width,slice.height,0,0,canvas.width,slice.height);if(pos>0){pdf.addPage();y=margin;}pdf.addImage(slice.toDataURL("image/png"),"PNG",margin,y,imgW,slice.height*(imgW/canvas.width));pos+=sliceH;}pdf.save(`per_diem_${selectedEmp?.id||"EMP"}_${month}.pdf`);
-    }catch(err){console.error(err);alert("PDF export failed. Make sure html2canvas and jspdf are installed.");}
+      const jsPDFMod=await import(/* @vite-ignore */ "jspdf");
+      const {jsPDF}=jsPDFMod as any;
+
+      // A vector PDF is used instead of screenshotting the UI.
+      // Result: crisp text, no buttons/checkbox controls, repeated table headers
+      // and clean multi-page output.
+      const pdf=new jsPDF({orientation:"landscape",unit:"pt",format:"a4",compress:true});
+      const pw=pdf.internal.pageSize.getWidth();
+      const ph=pdf.internal.pageSize.getHeight();
+
+      const margin=32;
+      const contentW=pw-margin*2;
+      const footerY=ph-30;
+
+      const safe=(value:any)=>{
+        const special:Record<string,string>={
+          "Ł":"L","ł":"l","Ø":"O","ø":"o","Đ":"D","đ":"d",
+          "Æ":"AE","æ":"ae","Œ":"OE","œ":"oe","ß":"ss",
+          "—":"-","–":"-","−":"-","·":"-","€":"EUR "
+        };
+        const replaced=String(value??"").replace(/[ŁłØøĐđÆæŒœß—–−·€]/g,ch=>special[ch]||ch);
+        try{return replaced.normalize("NFD").replace(/[\u0300-\u036f]/g,"");}catch{return replaced;}
+      };
+
+      const loc=(l:Location)=>{
+        const code=countryCode(l.country);
+        const city=(l.city||"").trim();
+        return safe(city&&city!=="Other"?`${code} - ${city}`:code);
+      };
+
+      const basis=(it:DailyPerDiem)=>{
+        const base=it.dayType==="FULL"?"Full day":it.dayType==="HALF"?">8h":"<=8h";
+        return safe(it.breakfastApplied?`${base}; breakfast -20%`:base);
+      };
+
+      const period=(it:DailyPerDiem)=>{
+        if(it.dayType==="FULL") return "Full day";
+        return `${hhmm(it.startUtc)} - ${hhmm(it.endUtc)}`;
+      };
+
+      const fullDays=calc.items.filter(it=>it.dayType==="FULL").length;
+      const halfDays=calc.items.filter(it=>it.dayType==="HALF").length;
+      const eligibleDays=calc.items.filter(it=>it.dayType!=="NONE").length;
+      const breakfastDays=calc.items.filter(it=>it.breakfastApplied).length;
+      const generatedUtc=`${new Date().toISOString().slice(0,16).replace("T"," ")} UTC`;
+
+      pdf.setProperties({
+        title:`Per Diem Statement ${month} - ${selectedEmp?.id||""}`,
+        subject:"Crew per diem statement",
+        author:selectedEmp?.name||selectedEmp?.id||"Crew member",
+        creator:"Windrose Per Diem",
+      });
+
+      let logo:string|null=null;
+      try{
+        const res=await fetch(DEFAULT_LOGO_URL,{cache:"no-store"});
+        if(res.ok){
+          const blob=await res.blob();
+          logo=await new Promise<string>((resolve,reject)=>{
+            const fr=new FileReader();
+            fr.onload=()=>resolve(String(fr.result));
+            fr.onerror=()=>reject(fr.error);
+            fr.readAsDataURL(blob);
+          });
+        }
+      }catch{}
+
+      const drawFooter=(pageNo:number)=>{
+        pdf.setDrawColor(225);
+        pdf.line(margin,ph-25,pw-margin,ph-25);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(105);
+        pdf.text("All times UTC. Breakfast deduction is 20% of the full-day rate where selected.",margin,ph-13);
+        pdf.text(`Page ${pageNo}`,pw-margin,ph-13,{align:"right"});
+        pdf.setTextColor(0);
+      };
+
+      const drawCompactPageHeader=()=>{
+        if(logo){
+          try{pdf.addImage(logo,"PNG",margin,18,92,31);}catch{}
+        }
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(13);
+        pdf.setTextColor(20);
+        pdf.text("PER DIEM STATEMENT",pw-margin,31,{align:"right"});
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(90);
+        pdf.text(`${safe(selectedEmp?.id||"")} - ${safe(selectedEmp?.name||"")} | ${month}`,pw-margin,45,{align:"right"});
+        pdf.setDrawColor(215);
+        pdf.line(margin,57,pw-margin,57);
+        pdf.setTextColor(0);
+        return 68;
+      };
+
+      const drawFirstHeader=()=>{
+        let y=25;
+        if(logo){
+          try{pdf.addImage(logo,"PNG",margin,y,116,39);}catch{}
+        }
+
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(18);
+        pdf.setTextColor(22);
+        pdf.text("CREW PER DIEM STATEMENT",pw-margin,y+10,{align:"right"});
+
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(95);
+        pdf.text("Windrose Air Jetcharter GmbH",pw-margin,y+25,{align:"right"});
+        pdf.text(`Generated: ${generatedUtc}`,pw-margin,y+38,{align:"right"});
+
+        y=76;
+        pdf.setDrawColor(218);
+        pdf.line(margin,y,pw-margin,y);
+        y+=14;
+
+        // Employee / report information block
+        const boxH=60;
+        const gap=12;
+        const boxW=(contentW-gap)/2;
+
+        pdf.setFillColor(248,250,252);
+        pdf.setDrawColor(226,232,240);
+        pdf.roundedRect(margin,y,boxW,boxH,7,7,"FD");
+        pdf.roundedRect(margin+boxW+gap,y,boxW,boxH,7,7,"FD");
+
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(8);
+        pdf.setTextColor(100);
+        pdf.text("CREW MEMBER",margin+12,y+15);
+        pdf.text("REPORT",margin+boxW+gap+12,y+15);
+
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(25);
+        pdf.text(`${safe(selectedEmp?.id||"")} - ${safe(selectedEmp?.name||"")}`,margin+12,y+32);
+
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(75);
+        const primary=selectedEmp?.basePrimary?.city
+          ? `${safe(selectedEmp.basePrimary.city)}, ${safe(selectedEmp.basePrimary.country)}`
+          : safe(selectedEmp?.basePrimary?.country||"");
+        const secondary=selectedEmp?.baseSecondary?.city
+          ? `${safe(selectedEmp.baseSecondary.city)}, ${safe(selectedEmp.baseSecondary.country)}`
+          : "";
+        pdf.text(`Primary base: ${primary}`,margin+12,y+46);
+        if(secondary) pdf.text(`Secondary base: ${secondary}`,margin+12,y+57);
+
+        const rx=margin+boxW+gap+12;
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(25);
+        pdf.text(`Month: ${month}`,rx,y+32);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(75);
+        pdf.text(`Rate table: ${ratesYear||selectedYear}`,rx,y+46);
+        pdf.text("Currency: EUR",rx,y+57);
+
+        y+=boxH+12;
+
+        // Summary strip
+        const cards=[
+          {label:"TOTAL PER DIEM",value:`EUR ${totalEUR.toFixed(2)}`},
+          {label:"ELIGIBLE DAYS",value:String(eligibleDays)},
+          {label:"FULL / HALF",value:`${fullDays} / ${halfDays}`},
+          {label:"BREAKFAST DED.",value:String(breakfastDays)},
+        ];
+        const cardGap=9;
+        const cardW=(contentW-cardGap*(cards.length-1))/cards.length;
+        const cardH=43;
+        cards.forEach((c,i)=>{
+          const x=margin+i*(cardW+cardGap);
+          if(i===0){
+            pdf.setFillColor(15,23,42);
+            pdf.setDrawColor(15,23,42);
+          }else{
+            pdf.setFillColor(248,250,252);
+            pdf.setDrawColor(226,232,240);
+          }
+          pdf.roundedRect(x,y,cardW,cardH,6,6,"FD");
+          pdf.setFont("helvetica","normal");
+          pdf.setFontSize(7);
+          pdf.setTextColor(i===0?205:105);
+          pdf.text(c.label,x+10,y+13);
+          pdf.setFont("helvetica","bold");
+          pdf.setFontSize(i===0?13:12);
+          pdf.setTextColor(i===0?255:25);
+          pdf.text(c.value,x+10,y+31);
+        });
+        pdf.setTextColor(0);
+        return y+cardH+15;
+      };
+
+      type PdfCol={key:string;label:string;width:number;align?:"left"|"right"|"center"};
+      const cols:PdfCol[]=[
+        {key:"date",label:"Date",width:68},
+        {key:"period",label:"Period (UTC)",width:78},
+        {key:"from",label:"From",width:89},
+        {key:"to",label:"To",width:89},
+        {key:"rate",label:"Rate",width:89},
+        {key:"type",label:"Type",width:48,align:"center"},
+        {key:"breakfast",label:"Breakfast",width:58,align:"center"},
+        {key:"amount",label:"Per diem",width:66,align:"right"},
+        {key:"basis",label:"Basis",width:0},
+      ];
+      const fixed=cols.slice(0,-1).reduce((s,c)=>s+c.width,0);
+      cols[cols.length-1].width=contentW-fixed;
+
+      const tableHeaderH=22;
+      const baseRowH=22;
+
+      const drawTableHeader=(y:number)=>{
+        pdf.setFillColor(241,245,249);
+        pdf.setDrawColor(226,232,240);
+        pdf.rect(margin,y,contentW,tableHeaderH,"FD");
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(70);
+        let x=margin;
+        for(const col of cols){
+          const tx=col.align==="right"?x+col.width-6:col.align==="center"?x+col.width/2:x+6;
+          pdf.text(col.label,tx,y+14,{align:col.align||"left"});
+          x+=col.width;
+        }
+        pdf.setTextColor(0);
+        return y+tableHeaderH;
+      };
+
+      const addContinuationPage=()=>{
+        drawFooter(pdf.getNumberOfPages());
+        pdf.addPage();
+        const top=drawCompactPageHeader();
+        return drawTableHeader(top);
+      };
+
+      let y=drawFirstHeader();
+      y=drawTableHeader(y);
+
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(8.2);
+
+      for(let i=0;i<calc.items.length;i++){
+        const it=calc.items[i];
+        const row:any={
+          date:safe(it.date),
+          period:safe(period(it)),
+          from:loc(it.from),
+          to:loc(it.to),
+          rate:loc(it.rateLocation),
+          type:safe(it.dayType),
+          breakfast:it.breakfastApplied?"Yes":"-",
+          amount:`${it.perDiemEUR.toFixed(2)}`,
+          basis:basis(it),
+        };
+
+        const basisLines=pdf.splitTextToSize(row.basis,Math.max(25,cols[cols.length-1].width-12));
+        const rowH=Math.max(baseRowH,10+basisLines.length*9);
+
+        if(y+rowH>footerY-78){
+          y=addContinuationPage();
+        }
+
+        if(i%2===1){
+          pdf.setFillColor(250,251,252);
+          pdf.rect(margin,y,contentW,rowH,"F");
+        }
+
+        pdf.setDrawColor(238,242,246);
+        pdf.line(margin,y+rowH,pw-margin,y+rowH);
+
+        let x=margin;
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(8.1);
+        pdf.setTextColor(45);
+
+        for(const col of cols){
+          const value=row[col.key];
+          const tx=col.align==="right"?x+col.width-6:col.align==="center"?x+col.width/2:x+6;
+          if(col.key==="type"){
+            pdf.setFont("helvetica","bold");
+            pdf.setTextColor(it.dayType==="FULL"?30:it.dayType==="HALF"?40:110);
+            pdf.text(String(value),tx,y+14,{align:"center"});
+            pdf.setFont("helvetica","normal");
+            pdf.setTextColor(45);
+          }else if(col.key==="amount"){
+            pdf.setFont("helvetica","bold");
+            pdf.text(String(value),tx,y+14,{align:"right"});
+            pdf.setFont("helvetica","normal");
+          }else if(col.key==="basis"){
+            pdf.setTextColor(95);
+            pdf.text(basisLines,tx,y+13);
+            pdf.setTextColor(45);
+          }else{
+            const maxW=col.width-12;
+            let printable=String(value);
+            while(pdf.getTextWidth(printable)>maxW&&printable.length>4){
+              printable=printable.slice(0,-2);
+            }
+            if(printable!==String(value)) printable=printable.slice(0,-1)+"...";
+            pdf.text(printable,tx,y+14,{align:col.align||"left"});
+          }
+          x+=col.width;
+        }
+        y+=rowH;
+      }
+
+      if(!calc.items.length){
+        pdf.setFont("helvetica","italic");
+        pdf.setFontSize(9);
+        pdf.setTextColor(110);
+        pdf.text(`No per-diem entries for ${month}.`,margin+8,y+20);
+        pdf.setTextColor(0);
+        y+=34;
+      }
+
+      if(calc.warnings.length){
+        const warningLines=calc.warnings.flatMap(w=>pdf.splitTextToSize(`- ${safe(w)}`,contentW-20));
+        const warningH=20+warningLines.length*9;
+        if(y+warningH>footerY-78) y=addContinuationPage();
+        pdf.setFillColor(255,251,235);
+        pdf.setDrawColor(253,230,138);
+        pdf.roundedRect(margin,y+8,contentW,warningH,6,6,"FD");
+        pdf.setFont("helvetica","bold");
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(146,64,14);
+        pdf.text("CALCULATION NOTES",margin+10,y+21);
+        pdf.setFont("helvetica","normal");
+        pdf.setFontSize(7.5);
+        pdf.text(warningLines,margin+10,y+34);
+        pdf.setTextColor(0);
+        y+=warningH+14;
+      }
+
+      // Final total + approval block.
+      const finalBlockH=66;
+      if(y+finalBlockH>footerY) y=addContinuationPage();
+
+      y+=10;
+      pdf.setDrawColor(203,213,225);
+      pdf.line(margin,y,pw-margin,y);
+      y+=12;
+
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(95);
+      pdf.text("Prepared by",margin,y+12);
+      pdf.setFont("helvetica","bold");
+      pdf.setFontSize(9.5);
+      pdf.setTextColor(30);
+      pdf.text(`${safe(selectedEmp?.name||"")} (${safe(selectedEmp?.id||"")})`,margin,y+28);
+
+      const signX=margin+220;
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(95);
+      pdf.text("Crew signature",signX,y+12);
+      pdf.setDrawColor(150);
+      pdf.line(signX,y+30,signX+150,y+30);
+
+      const approvalX=signX+190;
+      pdf.text("Approval / signature",approvalX,y+12);
+      pdf.line(approvalX,y+30,approvalX+150,y+30);
+
+      const totalX=pw-margin-170;
+      pdf.setFillColor(15,23,42);
+      pdf.setDrawColor(15,23,42);
+      pdf.roundedRect(totalX,y,170,42,7,7,"FD");
+      pdf.setFont("helvetica","normal");
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(205);
+      pdf.text("TOTAL PER DIEM",totalX+12,y+14);
+      pdf.setFont("helvetica","bold");
+      pdf.setFontSize(14);
+      pdf.setTextColor(255);
+      pdf.text(`EUR ${totalEUR.toFixed(2)}`,totalX+158,y+30,{align:"right"});
+      pdf.setTextColor(0);
+
+      // Footer on every page.
+      const pages=pdf.getNumberOfPages();
+      for(let p=1;p<=pages;p++){
+        pdf.setPage(p);
+        drawFooter(p);
+      }
+
+      pdf.save(`per_diem_${selectedEmp?.id||"EMP"}_${month}.pdf`);
+    }catch(err){
+      console.error(err);
+      alert("PDF export failed. Make sure jspdf is installed.");
+    }
   }
 
   return <div className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-white text-slate-900">
