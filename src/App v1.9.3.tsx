@@ -49,17 +49,6 @@ type ParsedIcsEvent = {
   from?: Location;
   to?: Location;
 };
-type RawIcsDiagnostics = {
-  eventCount: number;
-  rawFrom: string;
-  rawTo: string;
-  rawTimedFrom: string;
-  rawTimedTo: string;
-  allDayCount: number;
-  parsedTimedCount: number;
-  unparsedTimedCount: number;
-  selectedRawTimedEvents: Array<{date:string; summary:string; rawStart:string}>;
-};
 type DailyPerDiem = {
   date: string;
   startUtc: string;
@@ -187,14 +176,6 @@ const compactReason=(it:DailyPerDiem)=>{
 const isoDate=(d:Date)=>`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 const isoMinute=(d:Date)=>d.toISOString().slice(0,16);
 const hhmm=(iso:string)=>iso.slice(11,16);
-function defaultReportMonth(){
-  const now=new Date();
-  const y=now.getFullYear(), m=now.getMonth();
-  const lastDay=new Date(y,m+1,0).getDate();
-  const useCurrent=now.getDate()===lastDay;
-  const d=useCurrent ? new Date(y,m,1) : new Date(y,m-1,1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-}
 function monthDateBounds(month:string){
   const m=month.match(/^(\d{4})-(\d{2})$/);
   if(!m){ const d=new Date(); const ds=isoDate(d); return {from:ds,to:ds}; }
@@ -337,55 +318,6 @@ function parseIcsCalendar(text:string, rates:Rate[]):ParsedIcsEvent[]{
     events.push(ev);
   }
   return events;
-}
-function inspectRawIcs(text:string, rates:Rate[], fromDate:string, toDate:string):RawIcsDiagnostics{
-  const unfolded=unfoldIcs(text);
-  const blocks=unfolded.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
-  const rawDates:string[]=[];
-  const rawTimedDates:string[]=[];
-  let allDayCount=0;
-  let parsedTimedCount=0;
-  let unparsedTimedCount=0;
-  const selectedRawTimedEvents:Array<{date:string;summary:string;rawStart:string}>=[];
-
-  for(const block of blocks){
-    const summary=unescapeIcsText(readIcsProperty(block,"SUMMARY")).trim();
-    const rawStart=readIcsProperty(block,"DTSTART").trim();
-    const rawEnd=readIcsProperty(block,"DTEND").trim();
-    const dm=rawStart.match(/(\d{4})(\d{2})(\d{2})/);
-    const date=dm?`${dm[1]}-${dm[2]}-${dm[3]}`:"";
-    const isTimed=/T\d{4}/.test(rawStart) || /T\d{4}/.test(rawEnd);
-
-    if(date) rawDates.push(date);
-
-    if(isTimed){
-      if(date){
-        rawTimedDates.push(date);
-        if(date>=fromDate && date<=toDate) selectedRawTimedEvents.push({date,summary,rawStart});
-      }
-      const parsedStart=parseIcsUtc(rawStart);
-      const parsedEnd=parseIcsUtc(rawEnd);
-      if(parsedStart && parsedEnd) parsedTimedCount++;
-      else unparsedTimedCount++;
-    } else {
-      allDayCount++;
-    }
-  }
-
-  rawDates.sort();
-  rawTimedDates.sort();
-
-  return {
-    eventCount:blocks.length,
-    rawFrom:rawDates[0]||"",
-    rawTo:rawDates[rawDates.length-1]||"",
-    rawTimedFrom:rawTimedDates[0]||"",
-    rawTimedTo:rawTimedDates[rawTimedDates.length-1]||"",
-    allDayCount,
-    parsedTimedCount,
-    unparsedTimedCount,
-    selectedRawTimedEvents:selectedRawTimedEvents.slice(0,20),
-  };
 }
 function preferredProceedingHome(emp:Employee|null):Location|null{
   if(!emp) return null;
@@ -649,7 +581,7 @@ export default function App(){
   const selectedEmp=employees.find(e=>e.id===selectedEmpId)||null;
   const [empPanelOpen,setEmpPanelOpen]=useState(false);
   const [empForm,setEmpForm]=useState<Employee>({id:"",name:"",basePrimary:{country:"Germany",city:"Berlin"},baseSecondary:{country:"Poland",city:"Warsaw"}});
-  const [month,setMonth]=useState(()=>defaultReportMonth());
+  const [month,setMonth]=useState(()=>{const d=new Date();return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;});
   const selectedYear=Number(month.slice(0,4));
   const initialImportRange=monthDateBounds(month);
   const [fl3xxFromDate,setFl3xxFromDate]=useState(initialImportRange.from);
@@ -675,8 +607,6 @@ export default function App(){
   const [hiddenIcsKeys,setHiddenIcsKeys]=useState<string[]>([]);
   const [lastHiddenKey,setLastHiddenKey]=useState<string>("");
   const [feedCoverage,setFeedCoverage]=useState<{from:string;to:string}|null>(null);
-  const [rawFeedText,setRawFeedText]=useState("");
-  const [rawDiag,setRawDiag]=useState<RawIcsDiagnostics|null>(null);
   const previewRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
@@ -758,16 +688,10 @@ export default function App(){
         if(Array.isArray(parsed)) setHiddenIcsKeys(parsed.filter((x:any)=>typeof x==="string"));
       }
 
-      // Recovery/migration: ALWAYS merge any older FL3XX/ICS movements still present
-      // in per_diem_trips_v2 into the archive. This protects historical legs that
-      // were imported before the dedicated archive existed.
-      const legacyIcs=tripLegs.filter(l=>l.source==="ICS");
-      if(legacyIcs.length){
-        const seen=new Set<string>();
-        archive=[...archive,...legacyIcs]
-          .filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-          .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-        localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));
+      // One-time migration: preserve FL3XX/ICS movements already stored in the old trips cache.
+      if(!archive.length && tripLegs.length){
+        archive=tripLegs.filter(l=>l.source==="ICS");
+        if(archive.length) localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));
       }
 
       setFl3xxArchive(archive);
@@ -835,29 +759,6 @@ export default function App(){
     setLastHiddenKey("");
   }
 
-  function recoverLegacyTrips(){
-    try{
-      const raw=localStorage.getItem(LS_TRIPS_KEY);
-      if(!raw){ alert("No legacy trip cache found in this browser."); return; }
-      const parsed=JSON.parse(raw);
-      const legacy:Array<Leg>=Array.isArray(parsed?.legs)?parsed.legs.filter((l:any)=>l&&l.source==="ICS"):[];
-      if(!legacy.length){ alert("No older FL3XX movements found in the legacy trip cache."); return; }
-
-      const seen=new Set<string>();
-      const merged=[...fl3xxArchive,...legacy]
-        .filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-        .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-
-      const added=Math.max(0,merged.length-fl3xxArchive.length);
-      saveFl3xxArchive(merged);
-      setLegs(prev=>combineManualWithArchive(prev,merged));
-      setIcsImportStatus(`Legacy recovery checked ${legacy.length} FL3XX movement(s); ${added} movement(s) restored to the archive.`);
-      if(added===0) alert("Legacy cache checked, but it contained no additional FL3XX movements.");
-    }catch{
-      alert("Could not read the legacy trip cache.");
-    }
-  }
-
   function saveFl3xxArchive(archive:Leg[]){
     setFl3xxArchive(archive);
     try{localStorage.setItem(LS_FL3XX_ARCHIVE_KEY,JSON.stringify(archive));}catch{}
@@ -893,17 +794,6 @@ export default function App(){
     r.readAsText(file);
   }
 
-  function downloadRawFl3xxFeed(){
-    if(!rawFeedText){ alert("Refresh FL3XX first so the raw feed is available."); return; }
-    const blob=new Blob([rawFeedText],{type:"text/calendar;charset=utf-8"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=`fl3xx_raw_${fl3xxFromDate}_${fl3xxToDate}.ics`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   async function syncFl3xxCalendar(){
     const proxy=fl3xxProxyUrl.trim();
     const feed=fl3xxFeedUrl.trim();
@@ -925,10 +815,6 @@ export default function App(){
         try { const j=JSON.parse(body); if(j?.error) message += ` ${j.error}`; } catch {}
         throw new Error(message);
       }
-      setRawFeedText(body);
-      const diagnostics=inspectRawIcs(body,rates,fl3xxFromDate,fl3xxToDate);
-      setRawDiag(diagnostics);
-
       const allEvents=parseIcsCalendar(body,rates);
       const coverage=eventFeedCoverage(allEvents);
       setFeedCoverage(coverage);
@@ -1020,27 +906,16 @@ export default function App(){
   }
 
   const homes=homeBasesFor(selectedEmp);
-
   const visibleLegs=useMemo(()=>legs.filter(l=>l.source!=="ICS" || !hiddenIcsKeys.includes(legKey(l))),[legs,hiddenIcsKeys]);
-  const reportLegs=useMemo(
-    ()=>visibleLegs.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate)),
-    [visibleLegs,fl3xxFromDate,fl3xxToDate]
-  );
-
-  const calcContextFrom=shiftIsoDate(fl3xxFromDate,-7);
-  const calcLegs=useMemo(
-    ()=>visibleLegs.filter(l=>l.endUtc.slice(0,10)>=calcContextFrom && l.startUtc.slice(0,10)<=fl3xxToDate),
-    [visibleLegs,calcContextFrom,fl3xxToDate]
-  );
-  const calcAll=useMemo(()=>buildDailyPerDiems(calcLegs,rates,homes,breakfastByDate),[calcLegs,rates,selectedEmp,breakfastByDate]);
+  const calcAll=useMemo(()=>buildDailyPerDiems(visibleLegs,rates,homes,breakfastByDate),[visibleLegs,rates,selectedEmp,breakfastByDate]);
   const calc=useMemo(()=>({
     items:calcAll.items.filter(it=>it.date>=fl3xxFromDate && it.date<=fl3xxToDate),
-    warnings:calcAll.warnings.filter(w=>!w.startsWith("Open trip:")),
+    warnings:calcAll.warnings,
   }),[calcAll,fl3xxFromDate,fl3xxToDate]);
   const totalEUR=calc.items.reduce((s,it)=>s+it.perDiemEUR,0);
-  const tripSummary=useMemo(()=>summarizeTrips(calcLegs,homes),[calcLegs,selectedEmp]);
+  const tripSummary=useMemo(()=>summarizeTrips(visibleLegs,homes),[visibleLegs,selectedEmp]);
   const ratesYearMismatch=!!ratesYear && Number.isFinite(selectedYear) && selectedYear!==ratesYear;
-  const monthLegs=reportLegs;
+  const monthLegs=visibleLegs.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
   const monthFlights=monthLegs.filter(l=>l.movementType==="FLIGHT").length;
   const monthTrv=monthLegs.filter(l=>l.movementType==="TRV").length;
   const monthManual=monthLegs.filter(l=>l.movementType==="MANUAL").length;
@@ -1124,21 +999,6 @@ export default function App(){
       {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
       {feedCoverage&&fl3xxFromDate<feedCoverage.from&&<span className="text-amber-700">Selected range starts before FL3XX feed history.</span>}
     </div>}
-    {rawDiag&&<div className={`rounded-xl border px-3 py-2 text-xs ${rawDiag.unparsedTimedCount>0 || (rawDiag.rawTimedFrom && feedCoverage?.from && rawDiag.rawTimedFrom<feedCoverage.from) ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>
-      <strong>Raw FL3XX diagnostics:</strong> {rawDiag.eventCount} VEVENT(s)
-      {" · "}all events {rawDiag.rawFrom||"?"} → {rawDiag.rawTo||"?"}
-      {" · "}timed movements {rawDiag.rawTimedFrom||"none"} → {rawDiag.rawTimedTo||"none"}
-      {" · "}all-day {rawDiag.allDayCount}
-      {" · "}parsed timed {rawDiag.parsedTimedCount}
-      {" · "}unparsed timed {rawDiag.unparsedTimedCount}.
-      {rawDiag.rawTimedFrom && feedCoverage?.from && rawDiag.rawTimedFrom<feedCoverage.from
-        ? <span className="ml-1 font-medium">A timed event exists earlier than the parsed movement coverage — parser issue suspected.</span>
-        : null}
-      {rawDiag.unparsedTimedCount>0
-        ? <span className="ml-1 font-medium">{rawDiag.unparsedTimedCount} timed event(s) could not be parsed.</span>
-        : null}
-      {rawDiag.selectedRawTimedEvents.length>0&&<span className="ml-1">Timed events inside selected range: {rawDiag.selectedRawTimedEvents.length} (first 20 inspected).</span>}
-    </div>}
 
     {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX Calendar Connection</CardTitle></CardHeader><CardContent>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1154,8 +1014,6 @@ export default function App(){
                 <div className="mt-1 text-xs text-slate-500">Stored only in this browser. FL3XX movements are never deleted from the archive by the movement list; “Hide from report” only excludes them from calculations. Backup is useful before changing computer or clearing browser data.</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button type="button" variant="secondary" onClick={exportFl3xxArchive} disabled={!fl3xxArchive.length}>Backup archive</Button>
-                  <Button type="button" variant="secondary" onClick={downloadRawFl3xxFeed} disabled={!rawFeedText}>Download raw FL3XX feed</Button>
-                  <Button type="button" variant="secondary" onClick={recoverLegacyTrips}>Recover legacy trips</Button>
                   <Button type="button" variant="secondary" onClick={restoreAllHidden} disabled={!hiddenIcsKeys.length}>Restore hidden ({hiddenIcsKeys.length})</Button>
                   <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
                     <input type="file" accept="application/json,.json" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onImportFl3xxArchive(f);e.currentTarget.value="";}}/>
@@ -1194,7 +1052,7 @@ export default function App(){
     </Card>
 
     <Card><CardHeader className="flex items-center justify-between"><CardTitle>Trip Legs (UTC)</CardTitle><div className="flex gap-2"><Button variant="secondary" className="gap-2" onClick={addLeg}><IconPlus className="h-4 w-4"/> Add new leg</Button><Button variant="secondary" className="gap-2" onClick={addNextLeg}><IconPlus className="h-4 w-4"/> Next leg</Button></div></CardHeader>
-      <CardContent className="space-y-3">{reportLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
+      <CardContent className="space-y-3">{visibleLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
         <div className="lg:col-span-2"><label className="text-xs block">Start UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.startUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,startUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">End UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.endUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,endUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">From — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.from.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
@@ -1202,11 +1060,7 @@ export default function App(){
         <div className="lg:col-span-2"><label className="text-xs block">To — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.to.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">To — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.to.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{...x.to,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.to.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
         <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}>{leg.source==="ICS" ? <>Hide from report</> : <><IconTrash className="h-4 w-4"/> Remove</>}</Button></div>
-      </div>})}
-      {!reportLegs.length && <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-        No movements stored for {fl3xxFromDate} → {fl3xxToDate}.
-      </div>}
-      </CardContent>
+      </div>})}</CardContent>
     </Card>
 
     <Card><CardHeader><CardTitle>Calculation Preview</CardTitle></CardHeader><CardContent className="overflow-x-auto" ref={previewRef}>
