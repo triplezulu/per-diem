@@ -84,6 +84,17 @@ const defaultEmployees: Employee[] = [
   },
 ];
 
+function isPlaceholderEmployee(emp:Employee|null|undefined){
+  return !!emp && emp.id==="BER" && emp.name.trim().toLowerCase()==="default pilot";
+}
+function isCompleteEmployee(emp:Employee|null|undefined){
+  if(!emp || isPlaceholderEmployee(emp)) return false;
+  return /^[A-Z]{3}$/.test(emp.id)
+    && emp.name.trim().length>=2
+    && emp.basePrimary.country.trim().length>0
+    && emp.basePrimary.city.trim().length>0;
+}
+
 const CITY_COUNTRY_ONLY_SENTINEL = "__country_only__";
 const LS_RATES_KEY = "perdiem_rates_v1";
 const LS_RATES_YEAR_KEY = "perdiem_rates_year_v1";
@@ -92,6 +103,7 @@ const LS_EMPLOYEES_KEY = "perdiem_employees_v1";
 const LS_FL3XX_SETTINGS_KEY = "perdiem_fl3xx_settings_v1";
 const LS_FL3XX_ARCHIVE_KEY = "perdiem_fl3xx_archive_v1";
 const LS_FL3XX_HIDDEN_KEY = "perdiem_fl3xx_hidden_v1";
+const LS_ONBOARDING_KEY = "perdiem_onboarding_complete_v1";
 const DEFAULT_FL3XX_PROXY_URL = "https://fl3xx-perdiem-proxy.triplezulu.workers.dev/";
 
 const SAFE_BASE_URL: string = (() => {
@@ -649,6 +661,32 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
   } catch {}
 })();
 
+
+type AdminPilotStatus = {
+  personScheduleId:string;
+  employeeId:string;
+  displayName:string;
+  autoSyncEnabled:boolean;
+  lastAttemptAt:string;
+  lastSuccessAt:string;
+  lastError:string;
+  failureCount:number;
+  archiveCount:number;
+  archiveFrom:string;
+  archiveTo:string;
+  liveCount:number;
+  liveFrom:string;
+  liveTo:string;
+  liveUpdatedAt:string;
+  calendarLastSyncAt:string;
+  latestSyncLog:string;
+};
+type AdminFleetData = {
+  generatedAt:string;
+  summary:{pilots:number;autoSyncOn:number;withErrors:number;stale:number};
+  pilots:AdminPilotStatus[];
+};
+
 export default function App(){
   const [rates,setRates]=useState<Rate[]>(emptyRates);
   const [ratesStatus,setRatesStatus]=useState<"idle"|"loading"|"loaded"|"error">("idle");
@@ -660,6 +698,8 @@ export default function App(){
   const [employees,setEmployees]=useState<Employee[]>(defaultEmployees);
   const [selectedEmpId,setSelectedEmpId]=useState(defaultEmployees[0].id);
   const selectedEmp=employees.find(e=>e.id===selectedEmpId)||null;
+  const pilotProfileComplete=isCompleteEmployee(selectedEmp);
+  const [employeesHydrated,setEmployeesHydrated]=useState(false);
   const [empPanelOpen,setEmpPanelOpen]=useState(false);
   const [empForm,setEmpForm]=useState<Employee>({id:"",name:"",basePrimary:{country:"Germany",city:"Berlin"},baseSecondary:{country:"Poland",city:"Warsaw"}});
   const [month,setMonth]=useState(()=>defaultReportMonth());
@@ -694,6 +734,21 @@ export default function App(){
   const [serverArchiveCoverage,setServerArchiveCoverage]=useState<{from:string;to:string}|null>(null);
   const [serverArchiveCount,setServerArchiveCount]=useState<number>(0);
   const [serverArchiveMode,setServerArchiveMode]=useState(false);
+  const [calendarFeedUrl,setCalendarFeedUrl]=useState("");
+  const [calendarFeedLoading,setCalendarFeedLoading]=useState(false);
+  const [d1BackupLoading,setD1BackupLoading]=useState(false);
+  const [autoSyncLoading,setAutoSyncLoading]=useState(false);
+  const [autoSyncEnabled,setAutoSyncEnabled]=useState<boolean|null>(null);
+  const [autoSyncLastSuccess,setAutoSyncLastSuccess]=useState("");
+  const [autoSyncLastError,setAutoSyncLastError]=useState("");
+  const [adminPanelOpen,setAdminPanelOpen]=useState(false);
+  const [adminKey,setAdminKey]=useState("");
+  const [adminLoading,setAdminLoading]=useState(false);
+  const [adminError,setAdminError]=useState("");
+  const [adminFleet,setAdminFleet]=useState<AdminFleetData|null>(null);
+  const [onboardingOpen,setOnboardingOpen]=useState(false);
+  const [onboardingComplete,setOnboardingComplete]=useState(false);
+  const [onboardingHydrated,setOnboardingHydrated]=useState(false);
   const [rawFeedText,setRawFeedText]=useState("");
   const [rawDiag,setRawDiag]=useState<RawIcsDiagnostics|null>(null);
   const previewRef=useRef<HTMLDivElement>(null);
@@ -752,8 +807,52 @@ export default function App(){
     return()=>{cancelled=true};
   },[selectedYear]);
 
-  useEffect(()=>{try{const raw=localStorage.getItem(LS_EMPLOYEES_KEY);if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr)&&arr.length){setEmployees(arr);if(!arr.some((e:Employee)=>e.id===selectedEmpId))setSelectedEmpId(arr[0].id);}}}catch{}},[]);
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem(LS_EMPLOYEES_KEY);
+      if(raw){
+        const arr=JSON.parse(raw);
+        if(Array.isArray(arr)&&arr.length){
+          const loaded:Employee[]=arr.filter((e:any)=>e&&typeof e.id==="string"&&typeof e.name==="string");
+          const hasRealProfile=loaded.some(e=>isCompleteEmployee(e));
+          const cleaned=hasRealProfile ? loaded.filter(e=>!isPlaceholderEmployee(e)) : loaded;
+          if(cleaned.length){
+            setEmployees(cleaned);
+            if(!cleaned.some(e=>e.id===selectedEmpId)) setSelectedEmpId(cleaned[0].id);
+          }
+        }
+      }
+    }catch{}
+    finally{ setEmployeesHydrated(true); }
+  },[]);
   useEffect(()=>{try{localStorage.setItem(LS_EMPLOYEES_KEY,JSON.stringify(employees));}catch{}},[employees]);
+  useEffect(()=>{
+    if(employeesHydrated && !pilotProfileComplete) setEmpPanelOpen(true);
+  },[employeesHydrated,pilotProfileComplete]);
+  useEffect(()=>{
+    setCalendarFeedUrl("");
+    setAutoSyncEnabled(null);
+    setAutoSyncLastSuccess("");
+    setAutoSyncLastError("");
+  },[selectedEmpId]);
+
+  useEffect(()=>{
+    setOnboardingHydrated(false);
+    try{
+      const done=localStorage.getItem(`${LS_ONBOARDING_KEY}:${selectedEmpId}`)==="1";
+      setOnboardingComplete(done);
+    }catch{
+      setOnboardingComplete(false);
+    }finally{
+      setOnboardingHydrated(true);
+    }
+  },[selectedEmpId]);
+
+  useEffect(()=>{
+    if(employeesHydrated && onboardingHydrated && !onboardingComplete){
+      setOnboardingOpen(true);
+    }
+  },[employeesHydrated,onboardingHydrated,onboardingComplete,selectedEmpId]);
   useEffect(()=>{
     try{
       let tripLegs:Leg[]=[];
@@ -815,7 +914,66 @@ export default function App(){
   },[fl3xxProxyUrl,fl3xxFeedUrl,fl3xxUser]);
 
   function onUploadRatesFile(file:File){const r=new FileReader();r.onload=()=>{try{const text=String(r.result||"");const parsed=/^\s*[\[{]/.test(text)?normalizeRates(JSON.parse(text)):parseCSV(text);const m=file.name.match(/(20\d{2})/);const yr=m?Number(m[1]):null;setRates(parsed);setRatesYear(yr);setRatesStatus("loaded");try{localStorage.setItem(LS_RATES_KEY,JSON.stringify(parsed));if(yr)localStorage.setItem(LS_RATES_YEAR_KEY,String(yr));else localStorage.removeItem(LS_RATES_YEAR_KEY);}catch{}}catch{alert("Failed to parse rates file");}};r.readAsText(file);}
-  function addOrUpdateEmployee(){const id=empForm.id.toUpperCase();if(!/^[A-Z]{3}$/.test(id)){alert("Employee ID must be exactly 3 letters");return;}const entry={...empForm,id,name:empForm.name.trim()||id};setEmployees(prev=>{const n=prev.some(e=>e.id===id)?prev.map(e=>e.id===id?entry:e):[...prev,entry];return n.sort((a,b)=>a.id.localeCompare(b.id));});setSelectedEmpId(id);setEmpPanelOpen(false);}
+  function openPilotProfileEditor(){
+    if(pilotProfileComplete && selectedEmp){
+      setEmpForm({
+        id:selectedEmp.id,
+        name:selectedEmp.name,
+        basePrimary:{...selectedEmp.basePrimary},
+        baseSecondary:{...selectedEmp.baseSecondary},
+      });
+    } else {
+      setEmpForm({
+        id:"",
+        name:"",
+        basePrimary:selectedEmp?.basePrimary ? {...selectedEmp.basePrimary} : {country:"Germany",city:"Berlin"},
+        baseSecondary:selectedEmp?.baseSecondary ? {...selectedEmp.baseSecondary} : {country:"Poland",city:"Warsaw"},
+      });
+    }
+    setEmpPanelOpen(true);
+  }
+
+  function requirePilotProfile(action:string){
+    if(pilotProfileComplete) return true;
+    openPilotProfileEditor();
+    setIcsImportStatus(`Complete the pilot profile before ${action}.`);
+    try{window.scrollTo({top:0,behavior:"smooth"});}catch{}
+    return false;
+  }
+
+  function addOrUpdateEmployee(){
+    const id=empForm.id.toUpperCase().trim();
+    const name=empForm.name.trim();
+    const primaryCountry=empForm.basePrimary.country.trim();
+    const primaryCity=empForm.basePrimary.city.trim();
+
+    if(!/^[A-Z]{3}$/.test(id)){alert("Employee ID must be exactly 3 letters.");return;}
+    if(name.length<2 || name.toLowerCase()==="default pilot"){alert("Enter the pilot's name.");return;}
+    if(!primaryCountry || !primaryCity){alert("Primary Base country and city are required.");return;}
+
+    const entry:Employee={
+      ...empForm,
+      id,
+      name,
+      basePrimary:{country:primaryCountry,city:primaryCity},
+      baseSecondary:{
+        country:empForm.baseSecondary.country.trim(),
+        city:empForm.baseSecondary.city.trim(),
+      },
+    };
+
+    setEmployees(prev=>{
+      const withoutPlaceholder=prev.filter(e=>!isPlaceholderEmployee(e));
+      const n=withoutPlaceholder.some(e=>e.id===id)
+        ? withoutPlaceholder.map(e=>e.id===id?entry:e)
+        : [...withoutPlaceholder,entry];
+      return n.sort((a,b)=>a.id.localeCompare(b.id));
+    });
+    setSelectedEmpId(id);
+    setCalendarFeedUrl("");
+    setEmpPanelOpen(false);
+    setIcsImportStatus(`Pilot profile ${id} — ${name} saved.`);
+  }
   function exportEmployeesJSON(){const blob=new Blob([JSON.stringify(employees,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="employees.json";a.click();URL.revokeObjectURL(url);}
   function onImportEmployeesFile(file:File){const r=new FileReader();r.onload=()=>{try{const arr=JSON.parse(String(r.result||""));if(!Array.isArray(arr))throw 0;const cleaned:Employee[]=arr.filter((e:any)=>/^[A-Z]{3}$/.test(String(e?.id||"").toUpperCase())).map((e:any)=>({id:String(e.id).toUpperCase(),name:String(e.name||e.id),basePrimary:{country:String(e?.basePrimary?.country||""),city:String(e?.basePrimary?.city||"")},baseSecondary:{country:String(e?.baseSecondary?.country||""),city:String(e?.baseSecondary?.city||"")}}));if(!cleaned.length)throw 0;setEmployees(cleaned);setSelectedEmpId(cleaned[0].id);}catch{alert("Invalid employees JSON");}};r.readAsText(file);}
 
@@ -923,7 +1081,232 @@ export default function App(){
     URL.revokeObjectURL(url);
   }
 
+  async function ensurePersonalCalendarFeed(){
+    if(!requirePilotProfile("creating a personal calendar feed")) return;
+    const proxy=fl3xxProxyUrl.trim();
+    const feed=fl3xxFeedUrl.trim();
+    const user=fl3xxUser.trim();
+
+    if(!proxy){ alert("Enter the FL3XX proxy URL first."); setFl3xxPanelOpen(true); return; }
+    if(!isValidFl3xxFeedUrl(feed)){ alert("Enter a valid FL3XX personSchedules .ics URL."); setFl3xxPanelOpen(true); return; }
+    if(!user || !fl3xxPassword){ alert("Enter your FL3XX User ID and Password first."); setFl3xxPanelOpen(true); return; }
+
+    setCalendarFeedLoading(true);
+    try{
+      const res=await fetch(proxy,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          action:"calendarFeed",
+          feedUrl:feed,
+          username:user,
+          password:fl3xxPassword,
+          displayName:selectedEmp?.name || user.split("@")[0] || "Windrose FL3XX",
+          employeeId:selectedEmp?.id || "",
+        }),
+      });
+      const body=await res.text();
+      let payload:any=null;
+      try{ payload=JSON.parse(body); }catch{}
+      if(!res.ok) throw new Error(payload?.error || `Calendar feed setup failed (${res.status}).`);
+
+      const url=String(payload?.calendarUrl||"");
+      if(!url) throw new Error("Worker did not return a calendar feed URL.");
+      setCalendarFeedUrl(url);
+      if(payload?.lastSyncAt) setLastServerSyncAt(String(payload.lastSyncAt));
+      if(payload?.archiveCount!=null) setServerArchiveCount(Number(payload.archiveCount||0));
+      const af=String(payload?.archiveTimedFrom||"");
+      const at=String(payload?.archiveTimedTo||"");
+      if(af&&at) setServerArchiveCoverage({from:af,to:at});
+      setIcsImportStatus("Personal D1 calendar feed is ready.");
+    }catch(err:any){
+      const msg=err?.message || "Could not create personal calendar feed.";
+      setIcsImportStatus(msg);
+      alert(msg);
+    }finally{
+      setCalendarFeedLoading(false);
+    }
+  }
+
+  async function copyCalendarFeedUrl(){
+    if(!calendarFeedUrl) return;
+    try{
+      await navigator.clipboard.writeText(calendarFeedUrl);
+      setIcsImportStatus("Calendar subscription link copied.");
+    }catch{
+      prompt("Copy this calendar URL:",calendarFeedUrl);
+    }
+  }
+
+  function appleCalendarUrl(){
+    return calendarFeedUrl.replace(/^https:/i,"webcal:");
+  }
+
+  function applyAutoSyncStatus(payload:any){
+    const status=payload?.status||payload||{};
+    setAutoSyncEnabled(Boolean(status?.enabled));
+    setAutoSyncLastSuccess(String(status?.lastSuccessAt||""));
+    setAutoSyncLastError(String(status?.lastError||""));
+  }
+
+  async function callAutoSyncAction(action:"enableAutoSync"|"autoSyncStatus"|"disableAutoSync"){
+    if(!requirePilotProfile("managing automatic FL3XX sync")) return;
+
+    const proxy=fl3xxProxyUrl.trim();
+    const feed=fl3xxFeedUrl.trim();
+    const user=fl3xxUser.trim();
+
+    if(!proxy){ alert("Enter the FL3XX proxy URL first."); setFl3xxPanelOpen(true); return; }
+    if(!isValidFl3xxFeedUrl(feed)){ alert("Enter a valid FL3XX personSchedules .ics URL."); setFl3xxPanelOpen(true); return; }
+    if(!user || !fl3xxPassword){ alert("Enter your FL3XX User ID and Password first."); setFl3xxPanelOpen(true); return; }
+
+    if(action==="enableAutoSync"){
+      const ok=confirm(
+        "Enable automatic FL3XX sync?\\n\\nYour FL3XX calendar URL, User ID and Password will be stored encrypted in D1. The encryption key is stored separately as a Cloudflare Worker Secret. You can disable auto-sync at any time, which deletes the stored encrypted credentials."
+      );
+      if(!ok) return;
+    }
+
+    if(action==="disableAutoSync"){
+      const ok=confirm(
+        "Disable automatic FL3XX sync and permanently delete the stored encrypted FL3XX credentials for this pilot?"
+      );
+      if(!ok) return;
+    }
+
+    setAutoSyncLoading(true);
+    try{
+      const res=await fetch(proxy,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          action,
+          feedUrl:feed,
+          username:user,
+          password:fl3xxPassword,
+          displayName:selectedEmp?.name || user.split("@")[0] || "Windrose FL3XX",
+          employeeId:selectedEmp?.id || "",
+        }),
+      });
+      const raw=await res.text();
+      let payload:any=null;
+      try{payload=JSON.parse(raw);}catch{}
+      if(!res.ok) throw new Error(payload?.error || `Automatic sync request failed (${res.status}).`);
+
+      applyAutoSyncStatus(payload);
+      if(action==="enableAutoSync"){
+        setIcsImportStatus("Automatic FL3XX → D1 sync enabled. An immediate server sync completed.");
+        if(payload?.status?.lastSuccessAt) setLastServerSyncAt(String(payload.status.lastSuccessAt));
+      }else if(action==="disableAutoSync"){
+        setIcsImportStatus("Automatic sync disabled and stored encrypted FL3XX credentials deleted.");
+      }else{
+        setIcsImportStatus(payload?.status?.enabled ? "Automatic sync is enabled." : "Automatic sync is not enabled.");
+      }
+    }catch(err:any){
+      const msg=err?.message || "Could not manage automatic sync.";
+      setIcsImportStatus(msg);
+      alert(msg);
+    }finally{
+      setAutoSyncLoading(false);
+    }
+  }
+
+  function adminSyncAgeClass(value:string){
+    if(!value) return "unknown";
+    const t=Date.parse(value);
+    if(!Number.isFinite(t)) return "unknown";
+    const age=Date.now()-t;
+    if(age<=4*60*60*1000) return "fresh";
+    if(age<=8*60*60*1000) return "watch";
+    return "stale";
+  }
+
+  async function loadFleetAdmin(){
+    const proxy=fl3xxProxyUrl.trim();
+    if(!proxy){ setAdminError("FL3XX proxy URL is missing."); return; }
+    if(!adminKey.trim()){ setAdminError("Enter the Fleet Admin key."); return; }
+
+    setAdminLoading(true);
+    setAdminError("");
+    try{
+      const res=await fetch(proxy,{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "X-Admin-Key":adminKey.trim(),
+        },
+        body:JSON.stringify({action:"adminFleetStatus"}),
+      });
+      const raw=await res.text();
+      let payload:any=null;
+      try{payload=JSON.parse(raw);}catch{}
+      if(!res.ok) throw new Error(payload?.error || `Fleet status failed (${res.status}).`);
+      setAdminFleet(payload as AdminFleetData);
+    }catch(err:any){
+      setAdminFleet(null);
+      setAdminError(err?.message || "Could not load Fleet Admin status.");
+    }finally{
+      setAdminLoading(false);
+    }
+  }
+
+  async function downloadPersonalD1Backup(){
+    if(!requirePilotProfile("backing up the D1 archive")) return;
+
+    const proxy=fl3xxProxyUrl.trim();
+    const feed=fl3xxFeedUrl.trim();
+    const user=fl3xxUser.trim();
+
+    if(!proxy){ alert("Enter the FL3XX proxy URL first."); setFl3xxPanelOpen(true); return; }
+    if(!isValidFl3xxFeedUrl(feed)){ alert("Enter a valid FL3XX personSchedules .ics URL."); setFl3xxPanelOpen(true); return; }
+    if(!user || !fl3xxPassword){ alert("Enter your FL3XX User ID and Password first."); setFl3xxPanelOpen(true); return; }
+
+    setD1BackupLoading(true);
+    setIcsImportStatus("Preparing fresh D1 backup…");
+
+    try{
+      const res=await fetch(proxy,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          action:"exportD1Backup",
+          feedUrl:feed,
+          username:user,
+          password:fl3xxPassword,
+        }),
+      });
+
+      if(!res.ok){
+        const body=await res.text();
+        let payload:any=null;
+        try{payload=JSON.parse(body);}catch{}
+        throw new Error(payload?.error || `D1 backup failed (${res.status}).`);
+      }
+
+      const blob=await res.blob();
+      const day=new Date().toISOString().slice(0,10);
+      const filename=`fl3xx_d1_backup_${selectedEmp?.id||"EMP"}_${day}.json`;
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;
+      a.download=filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setIcsImportStatus(`D1 backup downloaded: ${filename}. Credentials and private calendar token are not included.`);
+    }catch(err:any){
+      const msg=err?.message || "Could not export D1 backup.";
+      setIcsImportStatus(msg);
+      alert(msg);
+    }finally{
+      setD1BackupLoading(false);
+    }
+  }
+
   async function onImportHistoricalFl3xxIcs(file:File){
+    if(!requirePilotProfile("importing historical FL3XX data")) return;
     const proxy=fl3xxProxyUrl.trim();
     const feed=fl3xxFeedUrl.trim();
     const user=fl3xxUser.trim();
@@ -989,6 +1372,7 @@ export default function App(){
   }
 
   async function syncFl3xxCalendar(){
+    if(!requirePilotProfile("syncing FL3XX")) return;
     const proxy=fl3xxProxyUrl.trim();
     const feed=fl3xxFeedUrl.trim();
     const user=fl3xxUser.trim();
@@ -1022,6 +1406,12 @@ export default function App(){
       setServerArchiveCount(Number(res.headers.get("X-FL3XX-Archive-Count")||0));
       const serverSyncAt=res.headers.get("X-FL3XX-Sync-At")||"";
       if(serverSyncAt) setLastServerSyncAt(serverSyncAt);
+      const autoEnabledHeader=res.headers.get("X-FL3XX-Auto-Sync-Enabled");
+      if(autoEnabledHeader!==null) setAutoSyncEnabled(autoEnabledHeader==="1");
+      const autoLastSuccess=res.headers.get("X-FL3XX-Auto-Sync-Last-Success")||"";
+      if(autoLastSuccess) setAutoSyncLastSuccess(autoLastSuccess);
+      const autoLastError=res.headers.get("X-FL3XX-Auto-Sync-Last-Error")||"";
+      setAutoSyncLastError(autoLastError);
 
       const body=await res.text();
       if(!res.ok){
@@ -1091,13 +1481,15 @@ export default function App(){
       setIcsImportStatus(details+warningText);
       setLastSyncAt(new Date().toLocaleString());
 
-      // After a successful FL3XX sync, guide the user directly to the result.
-      // Two animation frames give React time to render the imported movements first.
-      requestAnimationFrame(()=>{
+      // During first-run setup keep the pilot inside the onboarding guide.
+      // Outside onboarding, jump directly to the calculation result as before.
+      if(!onboardingOpen){
         requestAnimationFrame(()=>{
-          previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          requestAnimationFrame(()=>{
+            previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
         });
-      });
+      }
     } catch(err:any) {
       console.error(err);
       const msg=err?.message || "FL3XX sync failed.";
@@ -1183,9 +1575,42 @@ export default function App(){
     });
   }
 
-  function exportCSV(){const rows:string[][]=[["date","start_utc","end_utc","from","to","rate_country","rate_city","day_type","away_hours","breakfast","per_diem_eur"]];for(const it of calc.items)rows.push([it.date,it.startUtc,it.endUtc,locLabel(it.from),locLabel(it.to),it.rateLocation.country,it.rateLocation.city,it.dayType,it.awayHours.toFixed(2),it.breakfastApplied?"yes":"no",it.perDiemEUR.toFixed(2)]);const blob=new Blob([toCSV(rows)],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`per_diem_${selectedEmp?.id||"EMP"}_${month}.csv`;a.click();URL.revokeObjectURL(url);}
+  const bestSyncAt=autoSyncLastSuccess||lastServerSyncAt;
+  const syncStatusLabel=autoSyncEnabled===true?"Auto-sync ON":autoSyncEnabled===false?"Auto-sync OFF":"Sync status unknown";
+
+  const onboardingConnectionReady=pilotProfileComplete
+    && isValidFl3xxFeedUrl(fl3xxFeedUrl.trim())
+    && fl3xxUser.trim().length>0
+    && Boolean(lastServerSyncAt||serverArchiveMode);
+  const onboardingAutoSyncReady=autoSyncEnabled===true;
+  const onboardingCalendarReady=Boolean(calendarFeedUrl);
+  const onboardingSteps=[
+    pilotProfileComplete,
+    onboardingConnectionReady,
+    onboardingAutoSyncReady,
+    onboardingCalendarReady,
+  ];
+  const onboardingDoneCount=onboardingSteps.filter(Boolean).length;
+  const onboardingReadyToFinish=onboardingSteps.every(Boolean);
+
+  function finishOnboarding(){
+    if(!onboardingReadyToFinish) return;
+    try{localStorage.setItem(`${LS_ONBOARDING_KEY}:${selectedEmpId}`,"1");}catch{}
+    setOnboardingComplete(true);
+    setOnboardingOpen(false);
+    setIcsImportStatus("Pilot setup complete. FL3XX, automatic D1 sync, and personal calendar are ready.");
+  }
+
+  function restartOnboarding(){
+    try{localStorage.removeItem(`${LS_ONBOARDING_KEY}:${selectedEmpId}`);}catch{}
+    setOnboardingComplete(false);
+    setOnboardingOpen(true);
+  }
+
+  function exportCSV(){if(!requirePilotProfile("exporting CSV"))return;const rows:string[][]=[["date","start_utc","end_utc","from","to","rate_country","rate_city","day_type","away_hours","breakfast","per_diem_eur"]];for(const it of calc.items)rows.push([it.date,it.startUtc,it.endUtc,locLabel(it.from),locLabel(it.to),it.rateLocation.country,it.rateLocation.city,it.dayType,it.awayHours.toFixed(2),it.breakfastApplied?"yes":"no",it.perDiemEUR.toFixed(2)]);const blob=new Blob([toCSV(rows)],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`per_diem_${selectedEmp?.id||"EMP"}_${month}.csv`;a.click();URL.revokeObjectURL(url);}
 
   async function exportPDF(){
+    if(!requirePilotProfile("exporting PDF")) return;
     try{
       const node=previewRef.current;if(!node){alert("Preview not ready");return;}
       const [html2canvasMod,jsPDFMod]=await Promise.all([import(/* @vite-ignore */ "html2canvas"),import(/* @vite-ignore */ "jspdf")]);
@@ -1206,10 +1631,13 @@ export default function App(){
       <Card className="flex-1 border-white/10 bg-white/95"><CardContent>
         <div className="flex items-end gap-3 flex-wrap">
           <div><label className="mb-1 block text-sm font-medium">Employee</label><select className="w-[220px] rounded-xl border px-3 py-2 text-sm" value={selectedEmpId} onChange={e=>setSelectedEmpId(e.target.value)}>{employees.map(e=><option key={e.id} value={e.id}>{e.id} — {e.name}</option>)}</select></div>
-          <Button variant="outline" className="gap-2" onClick={()=>setEmpPanelOpen(v=>!v)}><IconEdit className="h-4 w-4"/> Add / Edit employee</Button>
+          <Button variant="outline" className="gap-2" onClick={openPilotProfileEditor}><IconEdit className="h-4 w-4"/> {pilotProfileComplete?"Edit pilot profile":"Create pilot profile"}</Button>
           <div className="grow"/><label className="mb-1 block text-sm font-medium">Month</label><input type="month" className="rounded-xl border px-3 py-2 text-sm" value={month} onChange={e=>setMonth(e.target.value)}/>
         </div>
         {empPanelOpen && <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Pilot profile is stored only in this browser. Employee ID must be exactly 3 letters. Primary Base is required; Secondary Home Base is optional.
+          </div>
           <div><label className="mb-1 block text-sm font-medium">Employee ID (3 letters)</label><Input value={empForm.id} maxLength={3} onChange={e=>setEmpForm({...empForm,id:e.target.value.toUpperCase()})}/></div>
           <div><label className="mb-1 block text-sm font-medium">Employee Name</label><Input value={empForm.name} onChange={e=>setEmpForm({...empForm,name:e.target.value})}/></div>
           <div><label className="mb-1 block text-sm font-medium">Primary Base — Country</label><Input value={empForm.basePrimary.country} onChange={e=>setEmpForm({...empForm,basePrimary:{...empForm.basePrimary,country:e.target.value}})}/></div>
@@ -1224,6 +1652,16 @@ export default function App(){
     </div>
     </div>
 
+    {employeesHydrated && !pilotProfileComplete && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="min-w-0">
+          <div className="font-semibold text-amber-950">Complete pilot setup to continue</div>
+          <div className="mt-1 text-sm text-amber-900/80">Start with your pilot profile, then the setup guide will take you through FL3XX, automatic sync and the permanent calendar.</div>
+        </div>
+        <Button className="shrink-0" onClick={()=>setOnboardingOpen(true)}>Open setup guide</Button>
+      </div>
+    </div>}
+
     <div className="flex items-center gap-3 flex-wrap">
       <Card className="p-3 flex items-center gap-3">
         <Badge className={ratesStatus==="error"||ratesYearMismatch?"border-amber-300 bg-amber-50 text-amber-800":"border-emerald-200 bg-emerald-50 text-emerald-700"}>
@@ -1231,54 +1669,284 @@ export default function App(){
         </Badge>
         <label className="text-xs cursor-pointer text-slate-500 hover:text-slate-700"><input type="file" accept=".json,.csv" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onUploadRatesFile(f);}}/><span className="inline-flex items-center gap-1"><IconUpload className="h-3.5 w-3.5"/> Manual override</span></label>
       </Card>
-      <Card className="p-3 flex items-center gap-2">
-        <Button variant="outline" onClick={()=>setFl3xxPanelOpen(v=>!v)}>FL3XX settings</Button>
-        <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500"><span>{fl3xxFromDate}</span><span>→</span><span>{fl3xxToDate}</span></div>
-        <Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing||historicalIcsImporting}>{fl3xxSyncing?"Refreshing…":"Refresh FL3XX"}</Button>
-      </Card>
-      <div className="grow"/><Button variant="outline" onClick={exportCSV}>Export CSV</Button>
+      <Button variant="outline" onClick={()=>setFl3xxPanelOpen(v=>!v)}>FL3XX & Calendar</Button>
+      <Button variant={onboardingComplete?"outline":"secondary"} onClick={()=>setOnboardingOpen(v=>!v)}>
+        {onboardingComplete?"Setup guide":`Finish setup · ${onboardingDoneCount}/4`}
+      </Button>
+      <Button variant="outline" onClick={()=>setAdminPanelOpen(v=>!v)}>Fleet Admin</Button>
+      <div className="grow"/>
+      <Button variant="outline" title={!pilotProfileComplete?"Create pilot profile first":undefined} disabled={!pilotProfileComplete} onClick={exportCSV}>Export CSV</Button>
     </div>
+
     {(ratesStatus==="error"||ratesYearMismatch) && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
       {ratesStatus==="error"
         ? <><strong>Rates {selectedYear} not found.</strong> Add <code>per_diem_{selectedYear}.json</code> to the app's <code>public</code> folder.</>
         : <><strong>Rates year mismatch:</strong> selected month is {selectedYear}, but loaded rates are {ratesYear}.</>}
     </div>}
+
+    <Card className="overflow-hidden border-slate-200">
+      <CardContent className="py-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+            <Badge className={autoSyncEnabled===true
+              ?"border-emerald-200 bg-emerald-50 text-emerald-700"
+              :autoSyncEnabled===false
+                ?"border-amber-200 bg-amber-50 text-amber-800"
+                :"border-slate-200 bg-slate-50 text-slate-600"}>
+              {syncStatusLabel}
+            </Badge>
+            {serverArchiveMode&&<Badge className="border-sky-200 bg-sky-50 text-sky-700">D1 protected</Badge>}
+            {bestSyncAt&&<span className="text-xs text-slate-600">Last server sync: <strong>{formatSyncTimestamp(bestSyncAt)}</strong></span>}
+            {serverArchiveMode&&<span className="text-xs text-slate-600"><strong>{serverArchiveCount}</strong> archived event(s)</span>}
+            {serverArchiveCoverage&&<span className="text-xs text-slate-500">Archive {serverArchiveCoverage.from} → {serverArchiveCoverage.to}</span>}
+            {liveTimedCoverage&&<span className="text-xs text-slate-500">Live feed {liveTimedCoverage.from} → {liveTimedCoverage.to}</span>}
+            {hiddenIcsKeys.length>0&&<span className="text-xs text-slate-500">Hidden: <strong>{hiddenIcsKeys.length}</strong></span>}
+            {lastHiddenKey&&<button type="button" className="text-xs font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button variant="secondary" onClick={()=>setFl3xxPanelOpen(true)}>Settings</Button>
+            <Button title={!pilotProfileComplete?"Create pilot profile first":undefined} onClick={()=>void syncFl3xxCalendar()} disabled={!pilotProfileComplete||fl3xxSyncing||historicalIcsImporting}>
+              {fl3xxSyncing?"Refreshing…":"Refresh now"}
+            </Button>
+          </div>
+        </div>
+        {autoSyncLastError&&<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Automatic sync warning: <strong>{autoSyncLastError}</strong>
+        </div>}
+        {serverArchiveCoverage&&fl3xxFromDate<serverArchiveCoverage.from&&<div className="mt-2 text-xs font-medium text-amber-700">Selected range starts before the D1 archive history.</div>}
+      </CardContent>
+    </Card>
+
     {icsImportStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-      {icsImportStatus}{lastSyncAt?<span className="ml-2 text-sky-600">Last refresh: {lastSyncAt}</span>:null}
-    </div>}
-    {(serverArchiveMode||liveTimedCoverage||serverArchiveCoverage) && <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-        {serverArchiveMode&&<span className="font-semibold text-emerald-800">D1 archive active · history protected</span>}
-        {serverArchiveCoverage&&<span>Archive: <strong>{serverArchiveCoverage.from} → {serverArchiveCoverage.to}</strong></span>}
-        {serverArchiveMode&&<span><strong>{serverArchiveCount}</strong> stored event(s)</span>}
-        {lastServerSyncAt&&<span>Last D1 sync: <strong>{formatSyncTimestamp(lastServerSyncAt)}</strong></span>}
-        {liveTimedCoverage&&<span>Current FL3XX feed: <strong>{liveTimedCoverage.from} → {liveTimedCoverage.to}</strong></span>}
-        {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
-        {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
-        {serverArchiveCoverage&&fl3xxFromDate<serverArchiveCoverage.from&&<span className="font-medium text-amber-700">Selected range starts before the D1 archive history.</span>}
-      </div>
+      {icsImportStatus}{lastSyncAt?<span className="ml-2 text-sky-600">Last manual refresh: {lastSyncAt}</span>:null}
     </div>}
 
-    {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX Calendar Connection</CardTitle></CardHeader><CardContent>
+    {onboardingOpen && <Card className="overflow-hidden border-sky-200 shadow-md">
+      <CardHeader>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle>Pilot Setup</CardTitle>
+              <Badge className={onboardingReadyToFinish?"border-emerald-200 bg-emerald-50 text-emerald-700":"border-sky-200 bg-sky-50 text-sky-700"}>
+                {onboardingDoneCount}/4 complete
+              </Badge>
+            </div>
+            <div className="mt-1 text-sm text-slate-500">Four quick steps. Once finished, FL3XX history, background sync and the permanent calendar work automatically.</div>
+          </div>
+          <Button variant="secondary" onClick={()=>setOnboardingOpen(false)}>Later</Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+
+          <div className={`rounded-2xl border p-4 ${pilotProfileComplete?"border-emerald-200 bg-emerald-50/50":"border-slate-200 bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${pilotProfileComplete?"bg-emerald-600 text-white":"bg-slate-900 text-white"}`}>1</div>
+              <div className="font-semibold text-slate-900">Pilot profile</div>
+              <div className="grow"/>
+              {pilotProfileComplete&&<Badge className="border-emerald-200 bg-white text-emerald-700">Done</Badge>}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">Employee ID and home bases are required for correct per-diem calculation and fleet identification.</div>
+            {pilotProfileComplete&&selectedEmp&&<div className="mt-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm">
+              <strong>{selectedEmp.id} · {selectedEmp.name}</strong>
+              <div className="mt-1 text-xs text-slate-500">Primary: {selectedEmp.basePrimary.city}, {selectedEmp.basePrimary.country}{selectedEmp.baseSecondary.city?` · Secondary: ${selectedEmp.baseSecondary.city}, ${selectedEmp.baseSecondary.country}`:""}</div>
+            </div>}
+            <div className="mt-3">
+              <Button variant={pilotProfileComplete?"secondary":"default"} onClick={openPilotProfileEditor}>{pilotProfileComplete?"Review profile":"Create pilot profile"}</Button>
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border p-4 ${onboardingConnectionReady?"border-emerald-200 bg-emerald-50/50":"border-slate-200 bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${onboardingConnectionReady?"bg-emerald-600 text-white":"bg-slate-900 text-white"}`}>2</div>
+              <div className="font-semibold text-slate-900">Connect FL3XX</div>
+              <div className="grow"/>
+              {onboardingConnectionReady&&<Badge className="border-emerald-200 bg-white text-emerald-700">Connected</Badge>}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">Paste your personal FL3XX iCal URL, User ID and Password. The password is not saved in this browser.</div>
+            <div className="mt-3 space-y-2">
+              <Input placeholder="https://app.fl3xx.com/.../personSchedules/...ics" value={fl3xxFeedUrl} onChange={e=>setFl3xxFeedUrl(e.target.value)}/>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Input placeholder="FL3XX User ID" value={fl3xxUser} onChange={e=>setFl3xxUser(e.target.value)}/>
+                <Input type="password" autoComplete="current-password" placeholder="FL3XX Password" value={fl3xxPassword} onChange={e=>setFl3xxPassword(e.target.value)}/>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button disabled={!pilotProfileComplete||fl3xxSyncing} onClick={()=>void syncFl3xxCalendar()}>{fl3xxSyncing?"Connecting…":onboardingConnectionReady?"Refresh connection":"Test connection & sync"}</Button>
+              {lastServerSyncAt&&<span className="text-xs text-slate-500">Server sync: {formatSyncTimestamp(lastServerSyncAt)}</span>}
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border p-4 ${onboardingAutoSyncReady?"border-emerald-200 bg-emerald-50/50":"border-slate-200 bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${onboardingAutoSyncReady?"bg-emerald-600 text-white":"bg-slate-900 text-white"}`}>3</div>
+              <div className="font-semibold text-slate-900">Enable automatic sync</div>
+              <div className="grow"/>
+              {onboardingAutoSyncReady&&<Badge className="border-emerald-200 bg-white text-emerald-700">ON</Badge>}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">Cloudflare keeps your D1 archive and calendar current even when the app is closed.</div>
+            <div className="mt-2 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs text-slate-500">Opt-in only. FL3XX credentials are encrypted before storage and can be deleted at any time.</div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button disabled={!onboardingConnectionReady||autoSyncLoading} onClick={()=>void callAutoSyncAction("enableAutoSync")}>
+                {autoSyncLoading?"Working…":onboardingAutoSyncReady?"Update credentials":"Enable auto-sync"}
+              </Button>
+              <Button variant="secondary" disabled={!pilotProfileComplete||!fl3xxPassword||autoSyncLoading} onClick={()=>void callAutoSyncAction("autoSyncStatus")}>Check status</Button>
+              {autoSyncLastSuccess&&<span className="text-xs text-slate-500">Last success: {formatSyncTimestamp(autoSyncLastSuccess)}</span>}
+            </div>
+            {autoSyncLastError&&<div className="mt-2 text-xs font-medium text-amber-800">{autoSyncLastError}</div>}
+          </div>
+
+          <div className={`rounded-2xl border p-4 ${onboardingCalendarReady?"border-emerald-200 bg-emerald-50/50":"border-slate-200 bg-white"}`}>
+            <div className="flex items-center gap-2">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${onboardingCalendarReady?"bg-emerald-600 text-white":"bg-slate-900 text-white"}`}>4</div>
+              <div className="font-semibold text-slate-900">Add permanent calendar</div>
+              <div className="grow"/>
+              {onboardingCalendarReady&&<Badge className="border-emerald-200 bg-white text-emerald-700">Ready</Badge>}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">Create your private D1-backed calendar link. Historical flights stay available even after FL3XX removes them from its own feed.</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button disabled={!onboardingConnectionReady||calendarFeedLoading} onClick={()=>void ensurePersonalCalendarFeed()}>
+                {calendarFeedLoading?"Creating…":onboardingCalendarReady?"Refresh calendar link":"Create calendar link"}
+              </Button>
+              {calendarFeedUrl&&<>
+                <Button variant="secondary" onClick={()=>void copyCalendarFeedUrl()}>Copy link</Button>
+                <a href={appleCalendarUrl()} className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">Open in Apple Calendar</a>
+              </>}
+            </div>
+            {calendarFeedUrl&&<div className="mt-2 break-all rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-500">{calendarFeedUrl}</div>}
+          </div>
+
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-slate-900">{onboardingReadyToFinish?"Everything is ready":"Complete all four steps"}</div>
+            <div className="mt-1 text-xs text-slate-500">{onboardingReadyToFinish?"Finish setup and the guide will stay out of the way. You can reopen it anytime from the top toolbar.":"The setup guide does not change your per-diem data. It only connects the automation and permanent calendar."}</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {onboardingComplete&&<Button variant="outline" onClick={restartOnboarding}>Reset guide</Button>}
+            <Button disabled={!onboardingReadyToFinish} onClick={finishOnboarding}>Finish setup</Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>}
+
+    {adminPanelOpen && <Card className="overflow-hidden border-slate-300">
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>Fleet Admin</CardTitle>
+          <Badge className="border-slate-200 bg-slate-50 text-slate-600">Protected</Badge>
+          {adminFleet&&<span className="text-xs text-slate-500">Updated {formatSyncTimestamp(adminFleet.generatedAt)}</span>}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end">
+            <div className="min-w-0 flex-1">
+              <label className="mb-1 block text-sm font-medium">Fleet Admin key</label>
+              <Input type="password" autoComplete="off" value={adminKey} onChange={e=>setAdminKey(e.target.value)} placeholder="Admin access key"/>
+              <div className="mt-1 text-xs text-slate-500">Kept only in the current browser tab memory. It is never saved to localStorage or D1.</div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={()=>void loadFleetAdmin()} disabled={adminLoading}>{adminLoading?"Loading…":adminFleet?"Refresh fleet status":"Open fleet status"}</Button>
+              <Button variant="secondary" onClick={()=>{setAdminPanelOpen(false);setAdminKey("");setAdminFleet(null);setAdminError("");}}>Close & clear key</Button>
+            </div>
+          </div>
+          {adminError&&<div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{adminError}</div>}
+        </div>
+
+        {adminFleet&&<>
+          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-xs text-slate-500">Pilots</div><div className="mt-1 text-xl font-semibold">{adminFleet.summary.pilots}</div></div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"><div className="text-xs text-emerald-700">Auto-sync ON</div><div className="mt-1 text-xl font-semibold text-emerald-800">{adminFleet.summary.autoSyncOn}</div></div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3"><div className="text-xs text-amber-700">Stale &gt; 8h</div><div className="mt-1 text-xl font-semibold text-amber-800">{adminFleet.summary.stale}</div></div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3"><div className="text-xs text-rose-700">With errors</div><div className="mt-1 text-xl font-semibold text-rose-800">{adminFleet.summary.withErrors}</div></div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Pilot</th>
+                  <th className="px-3 py-2 font-medium">Auto-sync</th>
+                  <th className="px-3 py-2 font-medium">Last success</th>
+                  <th className="px-3 py-2 font-medium">Archive</th>
+                  <th className="px-3 py-2 font-medium">Live</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {adminFleet.pilots.map(p=>{
+                  const ageClass=adminSyncAgeClass(p.lastSuccessAt);
+                  const hasError=!!p.lastError;
+                  const statusText=hasError?"ERROR":p.autoSyncEnabled?(ageClass==="stale"||ageClass==="unknown"?"STALE":"OK"):"OFF";
+                  const statusClass=hasError
+                    ?"border-rose-200 bg-rose-50 text-rose-700"
+                    :statusText==="OK"
+                      ?"border-emerald-200 bg-emerald-50 text-emerald-700"
+                      :statusText==="STALE"
+                        ?"border-amber-200 bg-amber-50 text-amber-800"
+                        :"border-slate-200 bg-slate-50 text-slate-600";
+                  return <tr key={p.personScheduleId} className="align-top">
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-slate-900">{p.displayName||"Unknown pilot"}</div>
+                      <div className="mt-0.5 text-slate-500">{p.employeeId?`${p.employeeId} · `:""}FL3XX {p.personScheduleId}</div>
+                    </td>
+                    <td className="px-3 py-3">{p.autoSyncEnabled?<Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">ON</Badge>:<Badge className="border-slate-200 bg-slate-50 text-slate-600">OFF</Badge>}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-slate-700">{p.lastSuccessAt?formatSyncTimestamp(p.lastSuccessAt):"—"}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-slate-800">{p.archiveCount} events</div>
+                      <div className="mt-0.5 whitespace-nowrap text-slate-500">{p.archiveFrom&&p.archiveTo?`${p.archiveFrom} → ${p.archiveTo}`:"—"}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-slate-800">{p.liveCount} events</div>
+                      <div className="mt-0.5 whitespace-nowrap text-slate-500">{p.liveFrom&&p.liveTo?`${p.liveFrom} → ${p.liveTo}`:"—"}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge className={statusClass}>{statusText}</Badge>
+                      {p.failureCount>0&&<div className="mt-1 text-slate-500">Failures: {p.failureCount}</div>}
+                      {p.lastError&&<div className="mt-1 max-w-sm text-rose-700">{p.lastError}</div>}
+                    </td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 text-xs text-slate-500">No FL3XX passwords, encrypted credential blobs, or private calendar tokens are exposed by this dashboard.</div>
+        </>}
+      </CardContent>
+    </Card>}
+
+    {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX & Calendar</CardTitle></CardHeader><CardContent>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="md:col-span-2">
           <details className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium text-slate-700">Advanced settings</summary>
+            <summary className="cursor-pointer text-sm font-medium text-slate-700">Advanced / recovery tools</summary>
             <div className="mt-3">
               <label className="mb-1 block text-sm font-medium">Proxy URL</label>
               <Input placeholder="https://your-worker.workers.dev/" value={fl3xxProxyUrl} onChange={e=>setFl3xxProxyUrl(e.target.value)}/>
-              <div className="mt-1 text-xs text-neutral-500">Normally you do not need to change this. The company proxy is preconfigured.</div>
+              <div className="mt-1 text-xs text-neutral-500">Technical setting. Normally you do not need to change this.</div>
               <div className="mt-4 border-t border-slate-200 pt-3">
-                <div className="text-sm font-medium">D1 server archive</div>
-                <div className="mt-1 text-xs text-slate-500">D1 is the permanent source of FL3XX history. Refresh merges the current FL3XX feed with the server archive; events do not disappear from the report just because FL3XX drops them from the live iCal feed.</div>
+                <div className="text-sm font-medium">D1 recovery & diagnostics</div>
+                <div className="mt-1 text-xs text-slate-500">The permanent D1 archive is managed automatically. Use the tools below only for backup, historical recovery, diagnostics, or legacy-browser recovery.</div>
 
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                  <div className="text-sm font-medium text-slate-800">D1 Archive Backup</div>
+                  <div className="mt-1 text-xs text-slate-500">Downloads a fresh server-side backup for this pilot only: permanent archived events, current live movements, calendar-feed metadata, and sync history. FL3XX credentials and the private calendar token are not included.</div>
+                  <div className="mt-2">
+                    <Button type="button" variant="secondary" title={!pilotProfileComplete?"Create pilot profile first":undefined} onClick={()=>void downloadPersonalD1Backup()} disabled={!pilotProfileComplete||d1BackupLoading||fl3xxSyncing||historicalIcsImporting}>
+                      {d1BackupLoading?"Preparing backup…":"Download D1 backup (.json)"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
                   <label className={`inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium ${historicalIcsImporting ? "cursor-wait bg-slate-200 text-slate-500" : "cursor-pointer bg-sky-100 text-sky-900 hover:bg-sky-200"}`}>
                     <input
                       type="file"
                       accept=".ics,text/calendar"
                       className="hidden"
-                      disabled={historicalIcsImporting || fl3xxSyncing}
+                      disabled={!pilotProfileComplete || historicalIcsImporting || fl3xxSyncing}
                       onChange={e=>{const f=e.target.files?.[0]; if(f)void onImportHistoricalFl3xxIcs(f); e.currentTarget.value="";}}
                     />
                     {historicalIcsImporting ? "Importing historical snapshot…" : "Import historical FL3XX snapshot"}
@@ -1323,11 +1991,62 @@ export default function App(){
         </div>
         <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium">FL3XX calendar URL</label><Input placeholder="https://app.fl3xx.com/api/external/ical/personSchedules/123456.ics" value={fl3xxFeedUrl} onChange={e=>setFl3xxFeedUrl(e.target.value)}/></div>
         <div><label className="mb-1 block text-sm font-medium">FL3XX User ID</label><Input autoComplete="username" value={fl3xxUser} onChange={e=>setFl3xxUser(e.target.value)}/></div>
-        <div><label className="mb-1 block text-sm font-medium">FL3XX Password</label><Input type="password" autoComplete="current-password" value={fl3xxPassword} onChange={e=>setFl3xxPassword(e.target.value)}/><div className="mt-1 text-xs text-neutral-500">Password is kept only in this browser tab's memory and is not saved to localStorage.</div></div>
+        <div><label className="mb-1 block text-sm font-medium">FL3XX Password</label><Input type="password" autoComplete="current-password" value={fl3xxPassword} onChange={e=>setFl3xxPassword(e.target.value)}/><div className="mt-1 text-xs text-neutral-500">Password is not saved to localStorage. If you explicitly enable Automatic Sync, an encrypted copy is stored server-side in D1 and can be deleted from the Auto-Sync controls.</div></div>
+        <div className="md:col-span-2 mt-1">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="text-sm font-semibold text-slate-800">Automation & Calendar</div>
+            <div className="mt-1 text-xs text-slate-500">Set it once: automatic sync keeps D1 current in the background, while the private calendar feed prevents old FL3XX events from disappearing from Apple Calendar.</div>
+            <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50/70 p-3">
+              <div className="text-sm font-medium text-slate-800">Personal Calendar Feed</div>
+              <div className="mt-1 text-xs text-slate-500">Creates a private, permanent calendar subscription backed by D1. Each pilot gets a separate link tied to their FL3XX person schedule. Treat the link as private — anyone who has it can read that pilot's flight/TRV calendar.</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" title={!pilotProfileComplete?"Create pilot profile first":undefined} onClick={()=>void ensurePersonalCalendarFeed()} disabled={!pilotProfileComplete||calendarFeedLoading||fl3xxSyncing}>
+                  {calendarFeedLoading?"Preparing calendar…":calendarFeedUrl?"Refresh calendar link":"Create personal calendar link"}
+                </Button>
+                {calendarFeedUrl&&<>
+                  <Button type="button" variant="secondary" onClick={()=>void copyCalendarFeedUrl()}>Copy link</Button>
+                  <a href={appleCalendarUrl()} className="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Open in Apple Calendar</a>
+                </>}
+              </div>
+              {calendarFeedUrl&&<div className="mt-2 break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-500">{calendarFeedUrl}</div>}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-medium text-slate-800">Automatic FL3XX → D1 Sync</div>
+                {autoSyncEnabled===true&&<Badge className="border-emerald-200 bg-emerald-50 text-emerald-700">ON</Badge>}
+                {autoSyncEnabled===false&&<Badge className="border-slate-200 bg-white text-slate-600">OFF</Badge>}
+                {autoSyncEnabled===null&&<Badge className="border-slate-200 bg-white text-slate-500">Status not checked</Badge>}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                Opt-in server sync keeps D1 and the private Apple Calendar feed current even when the app is closed. FL3XX credentials are encrypted before storage; the encryption key lives separately as a Cloudflare Worker Secret.
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" title={!pilotProfileComplete?"Create pilot profile first":undefined} onClick={()=>void callAutoSyncAction("enableAutoSync")} disabled={!pilotProfileComplete||autoSyncLoading||fl3xxSyncing}>
+                  {autoSyncLoading?"Working…":autoSyncEnabled?"Update credentials / re-enable":"Enable auto-sync"}
+                </Button>
+                <Button type="button" variant="secondary" onClick={()=>void callAutoSyncAction("autoSyncStatus")} disabled={!pilotProfileComplete||autoSyncLoading||fl3xxSyncing}>
+                  Check status
+                </Button>
+                {autoSyncEnabled===true&&<Button type="button" variant="outline" onClick={()=>void callAutoSyncAction("disableAutoSync")} disabled={autoSyncLoading||fl3xxSyncing}>
+                  Disable & delete credentials
+                </Button>}
+              </div>
+              {(autoSyncLastSuccess||autoSyncLastError)&&<div className="mt-2 space-y-1 text-xs">
+                {autoSyncLastSuccess&&<div className="text-emerald-700">Last automatic success: <strong>{formatSyncTimestamp(autoSyncLastSuccess)}</strong></div>}
+                {autoSyncLastError&&<div className="text-amber-800">Last error: <strong>{autoSyncLastError}</strong></div>}
+              </div>}
+            </div>
+
+          </div>
+        </div>
         <div><label className="mb-1 block text-sm font-medium">Import from</label><Input type="date" value={fl3xxFromDate} onChange={e=>setFl3xxFromDate(e.target.value)}/></div>
         <div><label className="mb-1 block text-sm font-medium">Import to</label><Input type="date" value={fl3xxToDate} onChange={e=>setFl3xxToDate(e.target.value)}/><div className="mt-1 text-xs text-slate-500">Defaults to the selected month. You can narrow it to any duty period.</div></div>
       </div>
-      <div className="mt-3 flex gap-2"><Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing||historicalIcsImporting}>{fl3xxSyncing?"Refreshing…":"Refresh now"}</Button><Button variant="secondary" onClick={()=>setFl3xxPanelOpen(false)}>Close</Button></div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="secondary" title={!pilotProfileComplete?"Create pilot profile first":undefined} onClick={()=>void syncFl3xxCalendar()} disabled={!pilotProfileComplete||fl3xxSyncing||historicalIcsImporting}>{fl3xxSyncing?"Refreshing…":"Refresh now"}</Button>
+        <Button onClick={()=>setFl3xxPanelOpen(false)}>Done</Button>
+      </div>
     </CardContent></Card>}
 
     <Card className="overflow-hidden">
@@ -1390,7 +2109,7 @@ export default function App(){
           <span className="mr-2 font-medium">Total per-diem:</span>
           <span className="font-semibold">€ {totalEUR.toFixed(2)}</span>
         </div>
-        <Button className="gap-2" onClick={exportPDF}>
+        <Button className="gap-2" title={!pilotProfileComplete?"Create pilot profile first":undefined} disabled={!pilotProfileComplete} onClick={exportPDF}>
           Export PDF
         </Button>
       </div>
