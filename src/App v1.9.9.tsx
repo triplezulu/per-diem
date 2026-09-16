@@ -187,19 +187,6 @@ const compactReason=(it:DailyPerDiem)=>{
 const isoDate=(d:Date)=>`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 const isoMinute=(d:Date)=>d.toISOString().slice(0,16);
 const hhmm=(iso:string)=>iso.slice(11,16);
-function formatSyncTimestamp(value:string){
-  if(!value) return "";
-  const d=new Date(value);
-  if(Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString([],{
-    year:"numeric",
-    month:"2-digit",
-    day:"2-digit",
-    hour:"2-digit",
-    minute:"2-digit",
-  });
-}
-
 function defaultReportMonth(){
   const now=new Date();
   const y=now.getFullYear(), m=now.getMonth();
@@ -685,7 +672,6 @@ export default function App(){
   const [historicalIcsImporting,setHistoricalIcsImporting]=useState(false);
   const [fl3xxPanelOpen,setFl3xxPanelOpen]=useState(false);
   const [lastSyncAt,setLastSyncAt]=useState<string>("");
-  const [lastServerSyncAt,setLastServerSyncAt]=useState<string>("");
   const [fl3xxArchive,setFl3xxArchive]=useState<Leg[]>([]);
   const [hiddenIcsKeys,setHiddenIcsKeys]=useState<string[]>([]);
   const [lastHiddenKey,setLastHiddenKey]=useState<string>("");
@@ -970,7 +956,6 @@ export default function App(){
       setServerArchiveMode(true);
       setServerArchiveCount(archiveCount);
       if(archiveFrom&&archiveTo) setServerArchiveCoverage({from:archiveFrom,to:archiveTo});
-      setLastServerSyncAt(new Date().toISOString());
 
       setIcsImportStatus(
         `Historical snapshot imported. ${processed} completed event(s) processed, ${added} new event(s) added to D1. Server archive now contains ${archiveCount} event(s).`
@@ -1020,8 +1005,6 @@ export default function App(){
       const archiveTo=res.headers.get("X-FL3XX-Archive-Timed-To")||"";
       setServerArchiveCoverage(archiveFrom&&archiveTo?{from:archiveFrom,to:archiveTo}:null);
       setServerArchiveCount(Number(res.headers.get("X-FL3XX-Archive-Count")||0));
-      const serverSyncAt=res.headers.get("X-FL3XX-Sync-At")||"";
-      if(serverSyncAt) setLastServerSyncAt(serverSyncAt);
 
       const body=await res.text();
       if(!res.ok){
@@ -1248,10 +1231,9 @@ export default function App(){
     </div>}
     {(serverArchiveMode||liveTimedCoverage||serverArchiveCoverage) && <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-        {serverArchiveMode&&<span className="font-semibold text-emerald-800">D1 archive active · history protected</span>}
+        {serverArchiveMode&&<span className="font-semibold text-emerald-800">D1 archive active</span>}
         {serverArchiveCoverage&&<span>Archive: <strong>{serverArchiveCoverage.from} → {serverArchiveCoverage.to}</strong></span>}
         {serverArchiveMode&&<span><strong>{serverArchiveCount}</strong> stored event(s)</span>}
-        {lastServerSyncAt&&<span>Last D1 sync: <strong>{formatSyncTimestamp(lastServerSyncAt)}</strong></span>}
         {liveTimedCoverage&&<span>Current FL3XX feed: <strong>{liveTimedCoverage.from} → {liveTimedCoverage.to}</strong></span>}
         {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
         {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}

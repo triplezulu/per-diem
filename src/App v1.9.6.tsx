@@ -187,19 +187,6 @@ const compactReason=(it:DailyPerDiem)=>{
 const isoDate=(d:Date)=>`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 const isoMinute=(d:Date)=>d.toISOString().slice(0,16);
 const hhmm=(iso:string)=>iso.slice(11,16);
-function formatSyncTimestamp(value:string){
-  if(!value) return "";
-  const d=new Date(value);
-  if(Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString([],{
-    year:"numeric",
-    month:"2-digit",
-    day:"2-digit",
-    hour:"2-digit",
-    minute:"2-digit",
-  });
-}
-
 function defaultReportMonth(){
   const now=new Date();
   const y=now.getFullYear(), m=now.getMonth();
@@ -682,18 +669,12 @@ export default function App(){
   const [fl3xxUser,setFl3xxUser]=useState("");
   const [fl3xxPassword,setFl3xxPassword]=useState("");
   const [fl3xxSyncing,setFl3xxSyncing]=useState(false);
-  const [historicalIcsImporting,setHistoricalIcsImporting]=useState(false);
   const [fl3xxPanelOpen,setFl3xxPanelOpen]=useState(false);
   const [lastSyncAt,setLastSyncAt]=useState<string>("");
-  const [lastServerSyncAt,setLastServerSyncAt]=useState<string>("");
   const [fl3xxArchive,setFl3xxArchive]=useState<Leg[]>([]);
   const [hiddenIcsKeys,setHiddenIcsKeys]=useState<string[]>([]);
   const [lastHiddenKey,setLastHiddenKey]=useState<string>("");
   const [feedCoverage,setFeedCoverage]=useState<{from:string;to:string}|null>(null);
-  const [liveTimedCoverage,setLiveTimedCoverage]=useState<{from:string;to:string}|null>(null);
-  const [serverArchiveCoverage,setServerArchiveCoverage]=useState<{from:string;to:string}|null>(null);
-  const [serverArchiveCount,setServerArchiveCount]=useState<number>(0);
-  const [serverArchiveMode,setServerArchiveMode]=useState(false);
   const [rawFeedText,setRawFeedText]=useState("");
   const [rawDiag,setRawDiag]=useState<RawIcsDiagnostics|null>(null);
   const previewRef=useRef<HTMLDivElement>(null);
@@ -918,74 +899,9 @@ export default function App(){
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;
-    a.download=`fl3xx_archive_response_${fl3xxFromDate}_${fl3xxToDate}.ics`;
+    a.download=`fl3xx_raw_${fl3xxFromDate}_${fl3xxToDate}.ics`;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  async function onImportHistoricalFl3xxIcs(file:File){
-    const proxy=fl3xxProxyUrl.trim();
-    const feed=fl3xxFeedUrl.trim();
-    const user=fl3xxUser.trim();
-
-    if(!proxy){ alert("Enter the FL3XX proxy URL first."); setFl3xxPanelOpen(true); return; }
-    if(!isValidFl3xxFeedUrl(feed)){ alert("Enter a valid FL3XX personSchedules .ics URL."); setFl3xxPanelOpen(true); return; }
-    if(!user || !fl3xxPassword){ alert("Enter your FL3XX User ID and Password first."); setFl3xxPanelOpen(true); return; }
-
-    setHistoricalIcsImporting(true);
-    setIcsImportStatus(`Importing historical FL3XX snapshot: ${file.name}…`);
-
-    try{
-      const archiveIcs=await file.text();
-      if(!/BEGIN:VCALENDAR/i.test(archiveIcs)){
-        throw new Error("Selected file is not a valid iCalendar (.ics) file.");
-      }
-
-      const res=await fetch(proxy,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          action:"importArchiveIcs",
-          feedUrl:feed,
-          username:user,
-          password:fl3xxPassword,
-          archiveIcs,
-        }),
-      });
-
-      const body=await res.text();
-      let payload:any=null;
-      try{ payload=JSON.parse(body); }catch{}
-
-      if(!res.ok){
-        throw new Error(payload?.error || `Historical FL3XX import failed (${res.status}).`);
-      }
-
-      const added=Number(payload?.newlyAddedEvents||0);
-      const processed=Number(payload?.processedCompletedEvents||0);
-      const archiveCount=Number(payload?.archiveCount||0);
-      const archiveFrom=String(payload?.archiveTimedFrom||"");
-      const archiveTo=String(payload?.archiveTimedTo||"");
-
-      setServerArchiveMode(true);
-      setServerArchiveCount(archiveCount);
-      if(archiveFrom&&archiveTo) setServerArchiveCoverage({from:archiveFrom,to:archiveTo});
-      setLastServerSyncAt(new Date().toISOString());
-
-      setIcsImportStatus(
-        `Historical snapshot imported. ${processed} completed event(s) processed, ${added} new event(s) added to D1. Server archive now contains ${archiveCount} event(s).`
-      );
-
-      // Pull the merged D1 + live archive back into the report immediately.
-      await syncFl3xxCalendar();
-    }catch(err:any){
-      console.error(err);
-      const msg=err?.message || "Historical FL3XX snapshot import failed.";
-      setIcsImportStatus(msg);
-      alert(msg);
-    }finally{
-      setHistoricalIcsImporting(false);
-    }
   }
 
   async function syncFl3xxCalendar(){
@@ -1001,28 +917,8 @@ export default function App(){
       const res=await fetch(proxy,{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          feedUrl:feed,
-          username:user,
-          password:fl3xxPassword,
-          fromDate:fl3xxFromDate,
-          toDate:fl3xxToDate,
-          contextDays:7,
-        }),
+        body:JSON.stringify({feedUrl:feed,username:user,password:fl3xxPassword}),
       });
-
-      const archiveMode=res.headers.get("X-FL3XX-Archive-Mode")==="d1";
-      setServerArchiveMode(archiveMode);
-      const liveFrom=res.headers.get("X-FL3XX-Live-Timed-From")||"";
-      const liveTo=res.headers.get("X-FL3XX-Live-Timed-To")||"";
-      setLiveTimedCoverage(liveFrom&&liveTo?{from:liveFrom,to:liveTo}:null);
-      const archiveFrom=res.headers.get("X-FL3XX-Archive-Timed-From")||"";
-      const archiveTo=res.headers.get("X-FL3XX-Archive-Timed-To")||"";
-      setServerArchiveCoverage(archiveFrom&&archiveTo?{from:archiveFrom,to:archiveTo}:null);
-      setServerArchiveCount(Number(res.headers.get("X-FL3XX-Archive-Count")||0));
-      const serverSyncAt=res.headers.get("X-FL3XX-Sync-At")||"";
-      if(serverSyncAt) setLastServerSyncAt(serverSyncAt);
-
       const body=await res.text();
       if(!res.ok){
         let message=`FL3XX sync failed (${res.status}).`;
@@ -1043,50 +939,24 @@ export default function App(){
       const contextEvents=allEvents.filter(e=>eventOverlapsDateRange(e,context.from,context.to));
       const result=buildLegsFromIcs(contextEvents,preferredProceedingHome(selectedEmp));
 
-      let reportSourceLegs:Leg[]=[];
-
-      if(archiveMode){
-        // D1 + current FL3XX is authoritative. Do not let browser cache decide
-        // which FL3XX movements appear in the report.
-        const authoritative=result.legs.filter(l=>l.source==="ICS");
-        setLegs(prev=>combineManualWithArchive(prev,authoritative));
-        reportSourceLegs=authoritative;
-
-        // Keep a non-destructive browser fallback only. It is never the source
-        // of truth while D1 mode is active.
-        const seen=new Set<string>();
-        const fallback=[...fl3xxArchive,...authoritative]
-          .filter(l=>{const k=legKey(l);if(seen.has(k))return false;seen.add(k);return true;})
-          .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-        saveFl3xxArchive(fallback);
-      } else {
-        // Legacy fallback for a Worker without D1 support.
-        let nextArchive=fl3xxArchive;
-        const refreshWindow=coverage?rangeIntersection(context.from,context.to,coverage.from,coverage.to):null;
-        if(refreshWindow){
-          nextArchive=replaceImportedLegsForRange(fl3xxArchive,result.legs,refreshWindow.from,refreshWindow.to)
-            .filter(l=>l.source==="ICS");
-          saveFl3xxArchive(nextArchive);
-          setLegs(prev=>combineManualWithArchive(prev,nextArchive));
-        }
-        reportSourceLegs=nextArchive;
+      // Refresh only the part of the archive that the current FL3XX feed actually covers.
+      // Historical movements outside current feed coverage are NEVER deleted.
+      let nextArchive=fl3xxArchive;
+      const refreshWindow=coverage?rangeIntersection(context.from,context.to,coverage.from,coverage.to):null;
+      if(refreshWindow){
+        nextArchive=replaceImportedLegsForRange(fl3xxArchive,result.legs,refreshWindow.from,refreshWindow.to)
+          .filter(l=>l.source==="ICS");
+        saveFl3xxArchive(nextArchive);
+        setLegs(prev=>combineManualWithArchive(prev,nextArchive));
       }
 
-      const reportArchiveLegs=reportSourceLegs.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
+      const reportArchiveLegs=nextArchive.filter(l=>legOverlapsDateRange(l,fl3xxFromDate,fl3xxToDate));
       const reportFlights=reportArchiveLegs.filter(l=>l.movementType==="FLIGHT").length;
       const reportTrv=reportArchiveLegs.filter(l=>l.movementType==="TRV").length;
 
-      let details=`Report range contains ${reportFlights} flight(s), ${reportTrv} TRV proceeding(s).`;
-      if(archiveMode){
-        details+=` D1 archive active (${Number(res.headers.get("X-FL3XX-Archive-Count")||0)} stored event(s)).`;
-        if(archiveFrom&&archiveTo) details+=` Archived timed coverage: ${archiveFrom} → ${archiveTo}.`;
-        if(liveFrom&&liveTo) details+=` Current live FL3XX timed coverage: ${liveFrom} → ${liveTo}.`;
-        const archivedThisSync=Number(res.headers.get("X-FL3XX-Archived-This-Sync")||0);
-        if(archivedThisSync) details+=` ${archivedThisSync} completed event(s) checked into D1 on this refresh.`;
-        if(archiveFrom && fl3xxFromDate<archiveFrom) details+=` The beginning of this report predates the server archive.`;
-      } else {
-        details+=` D1 archive is not active; using legacy live FL3XX/browser fallback mode.`;
-      }
+      let details=`Archive: ${nextArchive.length} movement(s). Report range contains ${reportFlights} flight(s), ${reportTrv} TRV proceeding(s).`;
+      if(coverage) details+=` FL3XX feed available: ${coverage.from} → ${coverage.to}.`;
+      if(coverage && fl3xxFromDate<coverage.from) details+=` Earlier dates are outside the current FL3XX feed and can only come from your local archive or manual ICS import.`;
       const warningText=result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
       setIcsImportStatus(details+warningText);
       setLastSyncAt(new Date().toLocaleString());
@@ -1234,8 +1104,9 @@ export default function App(){
       <Card className="p-3 flex items-center gap-2">
         <Button variant="outline" onClick={()=>setFl3xxPanelOpen(v=>!v)}>FL3XX settings</Button>
         <div className="hidden xl:flex items-center gap-2 text-xs text-slate-500"><span>{fl3xxFromDate}</span><span>→</span><span>{fl3xxToDate}</span></div>
-        <Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing||historicalIcsImporting}>{fl3xxSyncing?"Refreshing…":"Refresh FL3XX"}</Button>
+        <Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Refreshing…":"Refresh FL3XX"}</Button>
       </Card>
+      <Card className="p-3 flex items-center gap-3"><label className="text-sm cursor-pointer"><input type="file" accept=".ics,text/calendar" multiple className="hidden" onChange={e=>{void onImportIcsFiles(e.target.files);e.currentTarget.value="";}}/><span className="inline-flex items-center gap-2 text-slate-600"><IconUpload className="h-4 w-4"/> Manual ICS import</span></label></Card>
       <div className="grow"/><Button variant="outline" onClick={exportCSV}>Export CSV</Button>
     </div>
     {(ratesStatus==="error"||ratesYearMismatch) && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -1246,17 +1117,27 @@ export default function App(){
     {icsImportStatus && <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
       {icsImportStatus}{lastSyncAt?<span className="ml-2 text-sky-600">Last refresh: {lastSyncAt}</span>:null}
     </div>}
-    {(serverArchiveMode||liveTimedCoverage||serverArchiveCoverage) && <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-        {serverArchiveMode&&<span className="font-semibold text-emerald-800">D1 archive active · history protected</span>}
-        {serverArchiveCoverage&&<span>Archive: <strong>{serverArchiveCoverage.from} → {serverArchiveCoverage.to}</strong></span>}
-        {serverArchiveMode&&<span><strong>{serverArchiveCount}</strong> stored event(s)</span>}
-        {lastServerSyncAt&&<span>Last D1 sync: <strong>{formatSyncTimestamp(lastServerSyncAt)}</strong></span>}
-        {liveTimedCoverage&&<span>Current FL3XX feed: <strong>{liveTimedCoverage.from} → {liveTimedCoverage.to}</strong></span>}
-        {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
-        {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
-        {serverArchiveCoverage&&fl3xxFromDate<serverArchiveCoverage.from&&<span className="font-medium text-amber-700">Selected range starts before the D1 archive history.</span>}
-      </div>
+    {(feedCoverage||fl3xxArchive.length>0) && <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 px-1">
+      {feedCoverage&&<span>Current FL3XX feed coverage: <strong>{feedCoverage.from} → {feedCoverage.to}</strong></span>}
+      <span>Local archive: <strong>{fl3xxArchive.length}</strong> movement(s)</span>
+      {hiddenIcsKeys.length>0&&<span>Hidden from report: <strong>{hiddenIcsKeys.length}</strong></span>}
+      {lastHiddenKey&&<button type="button" className="font-medium text-sky-700 hover:underline" onClick={undoLastHide}>Undo last hide</button>}
+      {feedCoverage&&fl3xxFromDate<feedCoverage.from&&<span className="text-amber-700">Selected range starts before FL3XX feed history.</span>}
+    </div>}
+    {rawDiag&&<div className={`rounded-xl border px-3 py-2 text-xs ${rawDiag.unparsedTimedCount>0 || (rawDiag.rawTimedFrom && feedCoverage?.from && rawDiag.rawTimedFrom<feedCoverage.from) ? "border-amber-200 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>
+      <strong>Raw FL3XX diagnostics:</strong> {rawDiag.eventCount} VEVENT(s)
+      {" · "}all events {rawDiag.rawFrom||"?"} → {rawDiag.rawTo||"?"}
+      {" · "}timed movements {rawDiag.rawTimedFrom||"none"} → {rawDiag.rawTimedTo||"none"}
+      {" · "}all-day {rawDiag.allDayCount}
+      {" · "}parsed timed {rawDiag.parsedTimedCount}
+      {" · "}unparsed timed {rawDiag.unparsedTimedCount}.
+      {rawDiag.rawTimedFrom && feedCoverage?.from && rawDiag.rawTimedFrom<feedCoverage.from
+        ? <span className="ml-1 font-medium">A timed event exists earlier than the parsed movement coverage — parser issue suspected.</span>
+        : null}
+      {rawDiag.unparsedTimedCount>0
+        ? <span className="ml-1 font-medium">{rawDiag.unparsedTimedCount} timed event(s) could not be parsed.</span>
+        : null}
+      {rawDiag.selectedRawTimedEvents.length>0&&<span className="ml-1">Timed events inside selected range: {rawDiag.selectedRawTimedEvents.length} (first 20 inspected).</span>}
     </div>}
 
     {fl3xxPanelOpen && <Card><CardHeader><CardTitle>FL3XX Calendar Connection</CardTitle></CardHeader><CardContent>
@@ -1269,54 +1150,18 @@ export default function App(){
               <Input placeholder="https://your-worker.workers.dev/" value={fl3xxProxyUrl} onChange={e=>setFl3xxProxyUrl(e.target.value)}/>
               <div className="mt-1 text-xs text-neutral-500">Normally you do not need to change this. The company proxy is preconfigured.</div>
               <div className="mt-4 border-t border-slate-200 pt-3">
-                <div className="text-sm font-medium">D1 server archive</div>
-                <div className="mt-1 text-xs text-slate-500">D1 is the permanent source of FL3XX history. Refresh merges the current FL3XX feed with the server archive; events do not disappear from the report just because FL3XX drops them from the live iCal feed.</div>
-
+                <div className="text-sm font-medium">FL3XX local archive</div>
+                <div className="mt-1 text-xs text-slate-500">Stored only in this browser. FL3XX movements are never deleted from the archive by the movement list; “Hide from report” only excludes them from calculations. Backup is useful before changing computer or clearing browser data.</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <label className={`inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium ${historicalIcsImporting ? "cursor-wait bg-slate-200 text-slate-500" : "cursor-pointer bg-sky-100 text-sky-900 hover:bg-sky-200"}`}>
-                    <input
-                      type="file"
-                      accept=".ics,text/calendar"
-                      className="hidden"
-                      disabled={historicalIcsImporting || fl3xxSyncing}
-                      onChange={e=>{const f=e.target.files?.[0]; if(f)void onImportHistoricalFl3xxIcs(f); e.currentTarget.value="";}}
-                    />
-                    {historicalIcsImporting ? "Importing historical snapshot…" : "Import historical FL3XX snapshot"}
-                  </label>
-                  <Button type="button" variant="secondary" onClick={downloadRawFl3xxFeed} disabled={!rawFeedText}>Download merged archive ICS</Button>
+                  <Button type="button" variant="secondary" onClick={exportFl3xxArchive} disabled={!fl3xxArchive.length}>Backup archive</Button>
+                  <Button type="button" variant="secondary" onClick={downloadRawFl3xxFeed} disabled={!rawFeedText}>Download raw FL3XX feed</Button>
+                  <Button type="button" variant="secondary" onClick={recoverLegacyTrips}>Recover legacy trips</Button>
                   <Button type="button" variant="secondary" onClick={restoreAllHidden} disabled={!hiddenIcsKeys.length}>Restore hidden ({hiddenIcsKeys.length})</Button>
+                  <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
+                    <input type="file" accept="application/json,.json" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onImportFl3xxArchive(f);e.currentTarget.value="";}}/>
+                    Restore archive
+                  </label>
                 </div>
-
-                {rawDiag&&<details className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <summary className="cursor-pointer text-xs font-medium text-slate-600">Diagnostics</summary>
-                  <div className={`mt-2 text-xs ${rawDiag.unparsedTimedCount>0 || (rawDiag.rawTimedFrom && feedCoverage?.from && rawDiag.rawTimedFrom<feedCoverage.from) ? "text-amber-800" : "text-slate-500"}`}>
-                    Returned {rawDiag.eventCount} VEVENT(s)
-                    {" · "}all events {rawDiag.rawFrom||"?"} → {rawDiag.rawTo||"?"}
-                    {" · "}timed {rawDiag.rawTimedFrom||"none"} → {rawDiag.rawTimedTo||"none"}
-                    {" · "}all-day {rawDiag.allDayCount}
-                    {" · "}parsed timed {rawDiag.parsedTimedCount}
-                    {" · "}unparsed timed {rawDiag.unparsedTimedCount}.
-                    {rawDiag.unparsedTimedCount>0&&<span className="ml-1 font-medium">{rawDiag.unparsedTimedCount} timed event(s) could not be parsed.</span>}
-                  </div>
-                </details>}
-
-                <details className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <summary className="cursor-pointer text-xs font-medium text-slate-500">Legacy browser fallback tools</summary>
-                  <div className="mt-2 text-xs text-slate-500">These tools are no longer used as the primary archive. They remain only for recovery of data saved by older app versions.</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
-                      <input type="file" accept=".ics,text/calendar" multiple className="hidden" onChange={e=>{void onImportIcsFiles(e.target.files);e.currentTarget.value="";}}/>
-                      Import ICS to browser fallback
-                    </label>
-                    <Button type="button" variant="secondary" onClick={recoverLegacyTrips}>Recover legacy trips</Button>
-                    <Button type="button" variant="secondary" onClick={exportFl3xxArchive} disabled={!fl3xxArchive.length}>Backup browser fallback</Button>
-                    <label className="inline-flex cursor-pointer items-center rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-200">
-                      <input type="file" accept="application/json,.json" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)onImportFl3xxArchive(f);e.currentTarget.value="";}}/>
-                      Restore browser fallback
-                    </label>
-                    <span className="inline-flex items-center px-2 text-xs text-slate-400">{fl3xxArchive.length} cached movement(s)</span>
-                  </div>
-                </details>
               </div>
             </div>
           </details>
@@ -1327,7 +1172,7 @@ export default function App(){
         <div><label className="mb-1 block text-sm font-medium">Import from</label><Input type="date" value={fl3xxFromDate} onChange={e=>setFl3xxFromDate(e.target.value)}/></div>
         <div><label className="mb-1 block text-sm font-medium">Import to</label><Input type="date" value={fl3xxToDate} onChange={e=>setFl3xxToDate(e.target.value)}/><div className="mt-1 text-xs text-slate-500">Defaults to the selected month. You can narrow it to any duty period.</div></div>
       </div>
-      <div className="mt-3 flex gap-2"><Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing||historicalIcsImporting}>{fl3xxSyncing?"Refreshing…":"Refresh now"}</Button><Button variant="secondary" onClick={()=>setFl3xxPanelOpen(false)}>Close</Button></div>
+      <div className="mt-3 flex gap-2"><Button onClick={()=>void syncFl3xxCalendar()} disabled={fl3xxSyncing}>{fl3xxSyncing?"Refreshing…":"Refresh now"}</Button><Button variant="secondary" onClick={()=>setFl3xxPanelOpen(false)}>Close</Button></div>
     </CardContent></Card>}
 
     <Card className="overflow-hidden">
