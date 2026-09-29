@@ -471,6 +471,9 @@ function homeBasesFor(emp: Employee | null): Location[] {
   return bases;
 }
 function isHome(loc:Location, homes:Location[]) { return homes.some(h=>sameLoc(loc,h)); }
+function isHomeCountry(loc:Location, homes:Location[]) {
+  return !!loc?.country && homes.some(h=>h.country===loc.country);
+}
 
 function summarizeTrips(legs:Leg[], homes:Location[]){
   const sorted=[...legs]
@@ -525,7 +528,11 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     const last=active.legs[active.legs.length-1];
     const e=new Date(last.endUtc+":00Z");
     trips.push({start:active.start,end:e,closed:false,legs:active.legs,startLoc:active.startLoc,endLoc:last.to});
-    warnings.push("Open trip: no return to a home base has been entered yet.");
+    if(isHomeCountry(last.to,homes) && !isHome(last.to,homes)){
+      warnings.push("Possible missing TRV: the last movement entered a home-base country but did not reach the configured home base. Add a manual TRV if you proceeded home.");
+    }else{
+      warnings.push("Open trip: no return to a home base has been entered yet.");
+    }
   }
 
   type Candidate = {
@@ -552,12 +559,22 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
         if (earlierArrivals.length) startLoc=earlierArrivals[earlierArrivals.length-1].to;
         else if (day.getTime()===Date.UTC(trip.start.getUTCFullYear(),trip.start.getUTCMonth(),trip.start.getUTCDate())) startLoc=trip.startLoc;
 
-        // Last place actually reached before midnight; if returning home, rate uses last non-home location.
+        // Last place actually reached before midnight.
+        //
+        // Return-day rule:
+        // - exact return to a configured home base -> use the last location before home;
+        // - crossing from a foreign country into ANY home-base country -> also use the
+        //   foreign departure location for that travel day.
+        //
+        // Example: Paris -> Germany on the return day uses France/Paris.
+        // A later full 24h in Germany, or a movement wholly within Germany, can use Germany.
         let endLoc:Location=startLoc;
         let rateLoc:Location=startLoc;
         for (const l of arrivals) {
           endLoc=l.to;
-          if (isHome(l.to,homes)) rateLoc=l.from;
+          const exactHomeArrival=isHome(l.to,homes);
+          const entersHomeCountryFromAbroad=isHomeCountry(l.to,homes) && !isHomeCountry(l.from,homes);
+          if (exactHomeArrival || entersHomeCountryFromAbroad) rateLoc=l.from;
           else rateLoc=l.to;
         }
         if (!arrivals.length) {
@@ -630,6 +647,19 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     console.assert(t[1]?.rateLocation.city==="Palma","20 Aug should use Palma");
     console.assert(t[1]?.from.city==="Olbia" && t[1]?.to.city==="Palma","movement day should be Olbia→Palma");
     console.assert(t[2]?.rateLocation.city==="Palma","return day should use last non-home location, not BER");
+
+    const fabianHomes=[{country:"Germany",city:"Berlin"}];
+    const fabianRates:Rate[]=[
+      {country:"France",city:"Paris",full_day_eur:58,eight_plus_eur:39},
+      {country:"Germany",city:"Other",full_day_eur:28,eight_plus_eur:14},
+    ];
+    const fabianReturn:Leg[]=[
+      {id:"f1",startUtc:"2026-09-28T08:00",endUtc:"2026-09-28T10:00",from:fabianHomes[0],to:{country:"France",city:"Paris"},movementType:"FLIGHT",source:"ICS"},
+      {id:"f2",startUtc:"2026-09-29T08:00",endUtc:"2026-09-29T11:25",from:{country:"France",city:"Paris"},to:{country:"Germany",city:""},movementType:"FLIGHT",source:"ICS"},
+    ];
+    const fabian=buildDailyPerDiems(fabianReturn,fabianRates,fabianHomes,{}).items;
+    const fabianLast=fabian.find(x=>x.date==="2026-09-29");
+    console.assert(fabianLast?.rateLocation.country==="France" && fabianLast?.rateLocation.city==="Paris","Paris -> home-country return day must keep France/Paris rate");
     console.assert(new Set(t.map(x=>x.date)).size===t.length,"only one per-diem result per date");
 
     const icsFlight=`BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20260909T100000Z\nDTEND:20260909T120500Z\nLOCATION:LFTH TLN Hyeres Le Palyvestre\\, France\\n\\nLEMG AGP Malaga Costa del Sol\\, Spain\nSUMMARY:Ferry Flight  LFTH-LEMG [D-BEKP]\nEND:VEVENT\nEND:VCALENDAR`;
@@ -1531,6 +1561,50 @@ export default function App(){
 
   function addLeg(){setLegs(l=>[...l,{...makeDefaultLeg(),movementType:"MANUAL",source:"MANUAL"}]);}
   function addNextLeg(){setLegs(l=>{const last=l[l.length-1];if(!last)return[makeDefaultLeg()];const id=makeId();const start=last.endUtc;const d=new Date(start+":00Z");const endUtc=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),23,59)).toISOString().slice(0,16);return[...l,{id,startUtc:start,endUtc,from:{...last.to},to:{...last.from},movementType:"MANUAL",source:"MANUAL"}];});}
+
+  function addMissingTrvAfter(legId:string){
+    setLegs(prev=>{
+      const chronological=[...prev].sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
+      const idx=chronological.findIndex(l=>l.id===legId);
+      if(idx<0) return prev;
+
+      const anchor=chronological[idx];
+      const next=chronological[idx+1]||null;
+      const home=preferredProceedingHome(selectedEmp);
+
+      const from={...anchor.to};
+      let to:Location;
+      if(next && !sameLoc(anchor.to,next.from)) to={...next.from};
+      else if(home) to={...home};
+      else to={...anchor.from};
+
+      const startMs=new Date(anchor.endUtc+":00Z").getTime();
+      let endMs=startMs+90*60_000;
+
+      if(next){
+        const nextMs=new Date(next.startUtc+":00Z").getTime();
+        if(nextMs>startMs+10*60_000){
+          endMs=Math.min(endMs,nextMs-5*60_000);
+        }
+      }
+      if(endMs<=startMs) endMs=startMs+60*60_000;
+
+      const manualTrv:Leg={
+        id:makeId(),
+        startUtc:new Date(startMs).toISOString().slice(0,16),
+        endUtc:new Date(endMs).toISOString().slice(0,16),
+        from,
+        to,
+        movementType:"TRV",
+        source:"MANUAL",
+        label:"Manual TRV",
+      };
+
+      return [...prev,manualTrv].sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
+    });
+
+    setIcsImportStatus("Manual TRV added. Check the pre-filled route and UTC times, then adjust them if necessary.");
+  }
   function removeLeg(id:string){
     const target=legs.find(x=>x.id===id);
     if(!target) return;
@@ -2452,14 +2526,23 @@ export default function App(){
     </Card>
 
     <Card><CardHeader className="flex items-center justify-between"><CardTitle>Trip Legs (UTC)</CardTitle><div className="flex gap-2"><Button variant="secondary" className="gap-2" onClick={addLeg}><IconPlus className="h-4 w-4"/> Add new leg</Button><Button variant="secondary" className="gap-2" onClick={addNextLeg}><IconPlus className="h-4 w-4"/> Next leg</Button></div></CardHeader>
-      <CardContent className="space-y-3">{reportLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
+      <CardContent className="space-y-3">
+      <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+        Missing proceeding in FL3XX? Use <strong>+ TRV after</strong> on the movement before the missing proceeding. The app pre-fills the most likely route and time; review it before submitting the report.
+      </div>
+      {reportLegs.map(leg=>{const invalid=new Date(leg.startUtc+":00Z")>=new Date(leg.endUtc+":00Z");const tone=movementTone(leg.movementType);return <div key={leg.id} className={`grid grid-cols-1 lg:grid-cols-12 gap-2 items-end rounded-2xl border border-slate-200 p-3 ${tone.row}`}> 
         <div className="lg:col-span-2"><label className="text-xs block">Start UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.startUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,startUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">End UTC</label><input type="datetime-local" step={300} className={`w-full rounded-xl border px-3 py-2 text-sm ${invalid?"border-red-500":""}`} value={leg.endUtc} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,endUtc:e.target.value}:x))}/></div>
         <div className="lg:col-span-2"><label className="text-xs block">From — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.from.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">From — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.from.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,from:{...x.from,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.from.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
         <div className="lg:col-span-2"><label className="text-xs block">To — Country</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={leg.to.country} onChange={e=>{const c=e.target.value;setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{country:c,city:cityList(c)[0]||""}}:x));}}>{allCountries.map(c=><option key={c}>{c}</option>)}</select></div>
         <div className="lg:col-span-1"><label className="text-xs block">To — City</label><select className="w-full rounded-xl border px-3 py-2 text-sm" value={cityToSelectValue(leg.to.city)} onChange={e=>setLegs(ls=>ls.map(x=>x.id===leg.id?{...x,to:{...x.to,city:selectValueToCity(e.target.value)}}:x))}>{["",...cityList(leg.to.country)].map(c=><option key={c||CITY_COUNTRY_ONLY_SENTINEL} value={cityToSelectValue(c)}>{c||"(Country rate)"}</option>)}</select></div>
-        <div className="lg:col-span-2 flex items-center justify-end gap-2">{leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}{invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}<Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}>{leg.source==="ICS" ? <>Hide from report</> : <><IconTrash className="h-4 w-4"/> Remove</>}</Button></div>
+        <div className="lg:col-span-2 flex flex-wrap items-center justify-end gap-2">
+          {leg.movementType&&<Badge className={tone.badge}>{leg.movementType}</Badge>}
+          {invalid&&<span className="text-xs text-red-600">Start must be earlier than End</span>}
+          <Button variant="secondary" className="gap-1" onClick={()=>addMissingTrvAfter(leg.id)}>+ TRV after</Button>
+          <Button variant="outline" className="gap-2" onClick={()=>removeLeg(leg.id)}>{leg.source==="ICS" ? <>Hide from report</> : <><IconTrash className="h-4 w-4"/> Remove</>}</Button>
+        </div>
       </div>})}
       {!reportLegs.length && <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
         No movements stored for {fl3xxFromDate} → {fl3xxToDate}.
