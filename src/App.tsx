@@ -501,11 +501,37 @@ function normalizeHomeBaseContinuity(legs:Leg[], homes:Location[]){
     if(isUnknownCity(leg.to) && isHomeCountry(leg.to,homes)){
       const next=sorted[i+1];
       if(next){
-        const matchingHome=homes.find(h=>
-          h.country===leg.to.country &&
-          sameLoc(next.from,h)
-        );
-        if(matchingHome) leg.to={...matchingHome};
+        const homesInCountry=homes.filter(h=>h.country===leg.to.country);
+
+        // Strongest signal: the next movement explicitly departs from the configured base.
+        const exactMatchingHome=homesInCountry.find(h=>sameLoc(next.from,h));
+        if(exactMatchingHome){
+          leg.to={...exactMatchingHome};
+        }else{
+          // Country-only FL3XX continuity repair:
+          // arrival = "Poland" (no city), then after a multi-day stationary gap
+          // the next movement also departs from "Poland" (no city).
+          //
+          // If this pilot has exactly ONE configured home base in that country,
+          // infer that the stationary gap was spent at that base.
+          //
+          // We deliberately require >=24h to avoid turning ordinary overnight
+          // stops / short connections in the same country into home-base returns.
+          const nextFromUnknownSameCountry=
+            isUnknownCity(next.from) &&
+            next.from.country===leg.to.country;
+          const gapMs=
+            new Date(next.startUtc+":00Z").getTime()-
+            new Date(leg.endUtc+":00Z").getTime();
+
+          if(
+            homesInCountry.length===1 &&
+            nextFromUnknownSameCountry &&
+            gapMs>=24*60*60*1000
+          ){
+            leg.to={...homesInCountry[0]};
+          }
+        }
       }
     }
 
@@ -555,7 +581,13 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
   for(let i=0;i<Math.min(originalSorted.length,sorted.length);i++){
     const before=originalSorted[i], after=sorted[i];
     if(isUnknownCity(before.to) && isHome(after.to,homes) && before.to.country===after.to.country){
-      warnings.push(`Home-base inference: ${before.to.country} arrival was matched to ${after.to.city} because the next movement departs from that configured base.`);
+      const nextOriginal=originalSorted[i+1];
+      const exactNextBase=!!nextOriginal && homes.some(h=>sameLoc(nextOriginal.from,h));
+      warnings.push(
+        exactNextBase
+          ? `Home-base inference: ${before.to.country} arrival was matched to ${after.to.city} because the next movement departs from that configured base.`
+          : `Home-base inference: country-only ${before.to.country} arrival was matched to ${after.to.city} after a multi-day stationary gap before the next country-only departure.`
+      );
     }
   }
   const trips:Array<{start:Date; end:Date; closed:boolean; legs:Leg[]; startLoc:Location; endLoc:Location}> = [];
@@ -726,13 +758,20 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     ];
     const multiBaseLegs:Leg[]=[
       {id:"mb1",startUtc:"2026-08-31T08:00",endUtc:"2026-08-31T12:20",from:{country:"France",city:"Paris"},to:{country:"Poland",city:""},movementType:"FLIGHT",source:"ICS"},
-      {id:"mb2",startUtc:"2026-09-05T07:00",endUtc:"2026-09-05T10:00",from:{country:"Poland",city:"Warsaw"},to:{country:"Spain",city:"Madrid"},movementType:"FLIGHT",source:"ICS"},
-      {id:"mb3",startUtc:"2026-09-06T15:00",endUtc:"2026-09-06T18:00",from:{country:"Spain",city:"Madrid"},to:{country:"Poland",city:"Warsaw"},movementType:"FLIGHT",source:"ICS"},
+      {id:"mb2",startUtc:"2026-09-05T07:00",endUtc:"2026-09-05T16:30",from:{country:"Poland",city:""},to:{country:"Germany",city:"Berlin"},movementType:"FLIGHT",source:"ICS"},
+      {id:"mb3",startUtc:"2026-09-08T14:20",endUtc:"2026-09-08T18:00",from:{country:"Poland",city:"Warsaw"},to:{country:"France",city:"Paris"},movementType:"FLIGHT",source:"ICS"},
     ];
     const multiBase=buildDailyPerDiems(multiBaseLegs,multiBaseRates,homes,{}).items;
     console.assert(!multiBase.some(x=>x.date>="2026-09-01" && x.date<="2026-09-04"),"Secondary home base WAW must not generate per diem on stationary days");
     const mbReturn=multiBase.find(x=>x.date==="2026-08-31");
     console.assert(mbReturn?.rateLocation.city==="Paris","Return to inferred WAW home base must keep Paris return-day rate");
+
+    const concreteAway:Leg[]=[
+      {id:"ca1",startUtc:"2026-09-22T06:35",endUtc:"2026-09-22T10:00",from:{country:"Poland",city:"Warsaw"},to:{country:"Poland",city:"Wroclaw"},movementType:"FLIGHT",source:"ICS"},
+      {id:"ca2",startUtc:"2026-09-23T12:00",endUtc:"2026-09-23T17:45",from:{country:"Poland",city:"Wroclaw"},to:{country:"Poland",city:"Warsaw"},movementType:"FLIGHT",source:"ICS"},
+    ];
+    const concreteNormalized=normalizeHomeBaseContinuity(concreteAway,homes);
+    console.assert(concreteNormalized[0]?.to.city==="Wroclaw","Concrete city Wroclaw must never be inferred as Warsaw home base");
     console.assert(new Set(t.map(x=>x.date)).size===t.length,"only one per-diem result per date");
 
     const icsFlight=`BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20260909T100000Z\nDTEND:20260909T120500Z\nLOCATION:LFTH TLN Hyeres Le Palyvestre\\, France\\n\\nLEMG AGP Malaga Costa del Sol\\, Spain\nSUMMARY:Ferry Flight  LFTH-LEMG [D-BEKP]\nEND:VEVENT\nEND:VCALENDAR`;
