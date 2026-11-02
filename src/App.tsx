@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { jsPDF } from "jspdf";
 
 function Card(props: React.HTMLAttributes<HTMLDivElement>) {
   return <div {...props} className={"rounded-2xl border border-slate-200/80 shadow-sm bg-white/95 backdrop-blur-sm " + (props.className || "")} />;
@@ -474,11 +475,56 @@ function isHome(loc:Location, homes:Location[]) { return homes.some(h=>sameLoc(l
 function isHomeCountry(loc:Location, homes:Location[]) {
   return !!loc?.country && homes.some(h=>h.country===loc.country);
 }
+function isUnknownCity(loc:Location){
+  const city=(loc?.city||"").trim();
+  return !city || city==="Other";
+}
 
-function summarizeTrips(legs:Leg[], homes:Location[]){
+/**
+ * FL3XX occasionally gives us only a country-rate location for an airport.
+ * If a movement arrives in a configured home-base country with no usable city,
+ * and the next movement departs from an exact configured home base in that same
+ * country, infer that the pilot returned to that home base between the two.
+ *
+ * This prevents several stationary days at BER/WAW from being treated as
+ * "away from base" simply because the arrival city was missing in the iCal.
+ */
+function normalizeHomeBaseContinuity(legs:Leg[], homes:Location[]){
   const sorted=[...legs]
     .filter(l=>l.startUtc && l.endUtc)
-    .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
+    .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime())
+    .map(l=>({...l,from:{...l.from},to:{...l.to}}));
+
+  for(let i=0;i<sorted.length;i++){
+    const leg=sorted[i];
+
+    if(isUnknownCity(leg.to) && isHomeCountry(leg.to,homes)){
+      const next=sorted[i+1];
+      if(next){
+        const matchingHome=homes.find(h=>
+          h.country===leg.to.country &&
+          sameLoc(next.from,h)
+        );
+        if(matchingHome) leg.to={...matchingHome};
+      }
+    }
+
+    if(isUnknownCity(leg.from) && isHomeCountry(leg.from,homes)){
+      const prev=sorted[i-1];
+      if(prev){
+        const matchingHome=homes.find(h=>
+          h.country===leg.from.country &&
+          sameLoc(prev.to,h)
+        );
+        if(matchingHome) leg.from={...matchingHome};
+      }
+    }
+  }
+  return sorted;
+}
+
+function summarizeTrips(legs:Leg[], homes:Location[]){
+  const sorted=normalizeHomeBaseContinuity(legs,homes);
   let active=false;
   let closed=0;
   let open=0;
@@ -501,10 +547,17 @@ function summarizeTrips(legs:Leg[], homes:Location[]){
 }
 
 function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfastByDate:Record<string,boolean>): {items:DailyPerDiem[]; warnings:string[]} {
-  const sorted=[...legs]
+  const sorted=normalizeHomeBaseContinuity(legs,homes);
+  const warnings:string[]=[];
+  const originalSorted=[...legs]
     .filter(l=>l.startUtc && l.endUtc)
     .sort((a,b)=>new Date(a.startUtc+":00Z").getTime()-new Date(b.startUtc+":00Z").getTime());
-  const warnings:string[]=[];
+  for(let i=0;i<Math.min(originalSorted.length,sorted.length);i++){
+    const before=originalSorted[i], after=sorted[i];
+    if(isUnknownCity(before.to) && isHome(after.to,homes) && before.to.country===after.to.country){
+      warnings.push(`Home-base inference: ${before.to.country} arrival was matched to ${after.to.city} because the next movement departs from that configured base.`);
+    }
+  }
   const trips:Array<{start:Date; end:Date; closed:boolean; legs:Leg[]; startLoc:Location; endLoc:Location}> = [];
 
   let active:null|{start:Date; legs:Leg[]; startLoc:Location}=null;
@@ -660,6 +713,26 @@ function buildDailyPerDiems(legs:Leg[], rates:Rate[], homes:Location[], breakfas
     const fabian=buildDailyPerDiems(fabianReturn,fabianRates,fabianHomes,{}).items;
     const fabianLast=fabian.find(x=>x.date==="2026-09-29");
     console.assert(fabianLast?.rateLocation.country==="France" && fabianLast?.rateLocation.city==="Paris","Paris -> home-country return day must keep France/Paris rate");
+
+    // Multi-base regression:
+    // FL3XX arrival contains only "Poland" (city not resolved), but the next
+    // movement departs from exact secondary base Warsaw. 1-4 September must
+    // NOT become full per-diem days in Warsaw.
+    const multiBaseRates:Rate[]=[
+      {country:"France",city:"Paris",full_day_eur:58,eight_plus_eur:39},
+      {country:"Poland",city:"Warsaw",full_day_eur:40,eight_plus_eur:27},
+      {country:"Poland",city:"Other",full_day_eur:40,eight_plus_eur:27},
+      {country:"Spain",city:"Madrid",full_day_eur:50,eight_plus_eur:33},
+    ];
+    const multiBaseLegs:Leg[]=[
+      {id:"mb1",startUtc:"2026-08-31T08:00",endUtc:"2026-08-31T12:20",from:{country:"France",city:"Paris"},to:{country:"Poland",city:""},movementType:"FLIGHT",source:"ICS"},
+      {id:"mb2",startUtc:"2026-09-05T07:00",endUtc:"2026-09-05T10:00",from:{country:"Poland",city:"Warsaw"},to:{country:"Spain",city:"Madrid"},movementType:"FLIGHT",source:"ICS"},
+      {id:"mb3",startUtc:"2026-09-06T15:00",endUtc:"2026-09-06T18:00",from:{country:"Spain",city:"Madrid"},to:{country:"Poland",city:"Warsaw"},movementType:"FLIGHT",source:"ICS"},
+    ];
+    const multiBase=buildDailyPerDiems(multiBaseLegs,multiBaseRates,homes,{}).items;
+    console.assert(!multiBase.some(x=>x.date>="2026-09-01" && x.date<="2026-09-04"),"Secondary home base WAW must not generate per diem on stationary days");
+    const mbReturn=multiBase.find(x=>x.date==="2026-08-31");
+    console.assert(mbReturn?.rateLocation.city==="Paris","Return to inferred WAW home base must keep Paris return-day rate");
     console.assert(new Set(t.map(x=>x.date)).size===t.length,"only one per-diem result per date");
 
     const icsFlight=`BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20260909T100000Z\nDTEND:20260909T120500Z\nLOCATION:LFTH TLN Hyeres Le Palyvestre\\, France\\n\\nLEMG AGP Malaga Costa del Sol\\, Spain\nSUMMARY:Ferry Flight  LFTH-LEMG [D-BEKP]\nEND:VEVENT\nEND:VCALENDAR`;
@@ -1686,8 +1759,8 @@ export default function App(){
   async function exportPDF(){
     if(!requirePilotProfile("exporting PDF")) return;
     try{
-      const jsPDFMod=await import(/* @vite-ignore */ "jspdf");
-      const {jsPDF}=jsPDFMod as any;
+      // jsPDF is bundled by Vite at build time, so PDF export also works
+      // reliably from GitHub Pages instead of depending on a browser-time bare import.
 
       // A vector PDF is used instead of screenshotting the UI.
       // Result: crisp text, no buttons/checkbox controls, repeated table headers
@@ -2076,8 +2149,9 @@ export default function App(){
 
       pdf.save(`per_diem_${selectedEmp?.id||"EMP"}_${month}.pdf`);
     }catch(err){
-      console.error(err);
-      alert("PDF export failed. Make sure jspdf is installed.");
+      console.error("PDF export failed:",err);
+      const message=err instanceof Error ? err.message : String(err||"Unknown PDF error");
+      alert(`PDF export failed: ${message}`);
     }
   }
 
